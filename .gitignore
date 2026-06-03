@@ -1,0 +1,25 @@
+# =========================================================
+# GLOBAL CREDENTIALS SHIELD (BLOCKS ALL SECRET DIRECTORIES)
+# =========================================================
+# Block environment files anywhere in the workspace
+.env
+**/.env
+**/*.env
+
+# Block sensitive RSA keys anywhere in the workspace
+*.pem
+**/*.pem
+**/keys/
+keys/
+
+# =========================================================
+# RUNTIME, CACHE & SYSTEM NOISE FILTERS
+# =========================================================
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
