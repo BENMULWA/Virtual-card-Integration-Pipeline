@@ -40,6 +40,8 @@ docker compose logs -f api
 
 Keep to a **single** `uvicorn` worker. Rate limits and live updates are in-process.
 
+If host port 8000 is already used by another service, set `API_PORT=8010` (or any free port) in `.env` and use the same port in the nginx `proxy_pass` lines.
+
 ## 5. nginx
 
 Copy `deploy/nginx-cards.conf` into `/etc/nginx/snippets/mamlaka-cards.conf` and include it inside the TLS `server` block for your cards host:
