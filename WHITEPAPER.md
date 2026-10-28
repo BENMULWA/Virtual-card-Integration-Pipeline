@@ -1,272 +1,515 @@
-# Mamlaka Virtual Cards Integration
+# Mamlaka Virtual Cards
 
-## Customer Journey and Technical Whitepaper
+## Technical Whitepaper: process flows, reseller model and settlement
 
-**Version:** 1.0
-**Date:** 2026-10-05
-**Provider:** WasabiCard
-**Status:** Architecture and implementation review; not a statement of production readiness
+**Version:** 2.0
+**Date:** 2026-10-28
+**Card provider:** WasabiCard
+**Status:** Implemented and tested end to end in a development environment. Section 11 lists what must still be closed before real customers. This is not a statement of production readiness.
+
+Version 1.0 (2026-10-05) was a review of an early skeleton. Most of its findings have since been fixed; Section 11 records which, and which remain.
 
 ---
 
-## 1. Executive Summary
+## 1. Executive summary
 
-Mamlaka's virtual-card service is a backend integration between an authenticated Mamlaka application and WasabiCard. It is intended to let an eligible customer select a supported card product, complete identity verification, request a virtual card, and manage that card through controlled operations such as balance inquiry, funding, freezing, and cancellation.
+Mamlaka Virtual Cards is a backend service that issues and manages **virtual Mastercards** through WasabiCard's merchant API. It serves two kinds of caller:
 
-The application is a FastAPI service. It validates incoming requests, calls WasabiCard's merchant APIs, signs outbound request bodies with the merchant RSA private key, and uses MongoDB for application and transaction records. WasabiCard remains the external card-program provider: it determines supported products, performs provider-side cardholder review and card issuance, and reports asynchronous operation outcomes.
+- **Customers** of Mamlaka's own application, who register, pass KYC, top up a KES wallet with M-Pesa and get a card.
+- **Resellers** (businesses such as Comet and Jasiri), who use a **Partner API** to offer cards to their own customers, paid for from a prepaid float.
 
-The repository contains much of this integration skeleton, but it is **not yet a complete production customer-card system**. In particular, request fields do not consistently match Wasabi's contract, card and holder ownership/status are not persisted and enforced, callbacks are not verified or reconciled, monetary precision is lost in the client, and wallet/ledger accounting is not connected to card funding. The flows below describe the intended safe customer experience and identify which parts exist today versus which still require implementation.
+The service is a FastAPI application backed by MongoDB. It validates requests, enforces ownership, records every money-affecting operation before it calls a provider, keeps a ledger of wallet and float movements, signs requests to Wasabi, and reconciles asynchronous outcomes from webhooks and a background worker.
 
-## 2. Scope and Participants
+The central design rule is that **money is held first, the provider is called once, and the hold is then captured or released**. An unknown outcome (a timeout) never refunds: it stays held until it is read back from the provider.
 
-The system has four parties:
+## 2. Participants
 
-- **Customer:** Uses Mamlaka's client application to request and manage a card.
-- **Mamlaka application:** Authenticates the customer, enforces ownership and business rules, records local state, and exposes customer-facing APIs.
-- **WasabiCard:** Provides card products and merchant APIs, performs cardholder/card processing, and sends callback events.
-- **Operations and compliance teams:** Configure production credentials, IP allowlisting, callback destinations, product eligibility, incident handling, and reconciliation.
+| Party | Role |
+|---|---|
+| **Customer** | Uses Mamlaka's web app (a separate repository). |
+| **Reseller** | A business that integrates the Partner API for its own customers. Holds a prepaid float with Mamlaka. |
+| **Mamlaka Virtual Cards service** | This repository. Enforces rules, keeps ledgers, talks to the providers. |
+| **WasabiCard** | The card program provider: cardholder review, card issuance, card operations. Holds Mamlaka's USD merchant balance. |
+| **Mamlaka payments gateway** | Collects KES from phones (M-Pesa, Airtel) and pays KES out. A separate system run by Mamlaka PSP. |
+| **Safaricom Daraja** | Optional direct M-Pesa integration. |
+| **Operations and compliance** | Credit floats, fund the Wasabi balance, review stuck items, hold the production credentials. |
 
-This repository provides backend endpoints. It does not contain a customer web or mobile interface, a complete wallet accounting implementation, or an operational support console. Product copy and screens described in this paper are requirements for a customer-facing client, not existing UI features.
+## 3. System architecture
 
-## 3. Intended Customer Journey
+```mermaid
+flowchart TB
+    subgraph CALL["Callers"]
+        CU["Customer web app"]
+        RS["Reseller servers: Comet, Jasiri"]
+    end
 
-### 3.1 Discover an eligible card
+    subgraph SVC["Mamlaka Virtual Cards service (FastAPI)"]
+        API["Customer API"]
+        PAPI["Partner API"]
+        ENG["Operation engine<br/>hold, call once, settle"]
+        LED["Ledger and wallets"]
+        HOOK["Webhook receivers"]
+        REC["Reconcile worker<br/>and treasury check"]
+        OUT["Reseller event outbox"]
+    end
 
-The customer signs in and views card products that Mamlaka has enabled. The client gets available products through the supported-BINs API and displays only options that meet the customer's country, currency, cardholder, funding, and account eligibility rules. Product fees, initial funding requirements, limits, supported usage, and important restrictions should be shown before the customer confirms.
+    DB[("MongoDB")]
 
-The Wasabi response contains product-specific properties such as `cardTypeId`, `organization`, `country`, `mode`, `needCardHolder`, deposit requirements, fees, and supported regions. Product eligibility must be derived from this live configuration rather than a BIN ID or KYC assumption hard-coded into the application.
+    subgraph EXT["External systems"]
+        WSB["WasabiCard API"]
+        GW["Mamlaka payments gateway"]
+        SAF["Safaricom Daraja"]
+        RWH["Reseller webhook endpoints"]
+    end
 
-### 3.2 Complete identity verification when required
+    CU --> API
+    RS --> PAPI
+    API --> ENG
+    PAPI --> ENG
+    ENG --> LED
+    ENG --> DB
+    LED --> DB
+    ENG -->|"signed requests"| WSB
+    API -->|"STK push and payouts"| GW
+    API -.->|"optional"| SAF
+    REC --> ENG
+    REC -->|"read USD balance"| WSB
+    REC --> OUT
+    OUT -->|"signed events"| RWH
+    WSB -->|"webhooks"| HOOK
+    GW -->|"signed callbacks"| HOOK
+    SAF -->|"callback"| HOOK
+    HOOK --> ENG
+```
 
-If the selected BIN requires a cardholder, the customer supplies the provider-required identity and billing information. The client uploads the permitted document images or PDF and receives provider file identifiers. Mamlaka submits the cardholder request and records the returned `holderId` and review state.
+| Component | Responsibility | Code |
+|---|---|---|
+| Operation engine | Records intent, holds funds, calls Wasabi once, settles | `app/cards/service.py`, `app/transactions/orchestrator.py` |
+| Ledger | Idempotent credit, reserve, capture, release on integer minor units | `app/wallet/ledger.py` |
+| Partner layer | Reseller accounts, API keys, customers, floats, events | `app/partners/` |
+| Gateway client | STK collections and payouts, signed callbacks | `app/mobilemoney/` |
+| Treasury | Real Wasabi USD against reseller floats | `app/core/treasury.py` |
+| Reconcile worker | Recovers anything a webhook missed | `app/jobs/reconcile.py` |
 
-The customer sees a clear state such as **In review**, **Action required**, **Approved**, or **Declined**. Card creation is available only after Wasabi reports an approved holder, such as `pass_audit`. A pending review is not a successful approval. Rejected applications should show a safe, useful explanation and a correction path where the provider permits resubmission.
+## 4. Customer journey
 
-KYC data is highly sensitive. The customer should see the purpose of collection, who processes it, retention/support arrangements, and any applicable privacy notice before submitting it. The application must not expose another customer's KYC record or persist identity values in general-purpose logs.
+The customer-facing application tracks one ordered journey of seven steps, exposed at `GET /api/v1/journey` and streamed over Server-Sent Events.
 
-### 3.3 Confirm and request card creation
+```mermaid
+flowchart TD
+    A["1. Register"] --> B["2. Verify email"]
+    B --> C["3. Upload ID front, back and selfie"]
+    C --> D["4. Submit identity details<br/>cardholder registration"]
+    D --> E{"5. Wasabi review"}
+    E -->|"approved: pass_audit"| F["6. Top up wallet and request card"]
+    E -->|"rejected"| G["Correct details and resubmit<br/>PUT cardholder"]
+    G --> E
+    E -->|"stuck"| H["Escalate with a work ticket"]
+    H --> E
+    F --> I{"Wallet covers the price?"}
+    I -->|"no"| J["Top up with mobile money"]
+    J --> I
+    I -->|"yes"| K["Card issued<br/>pending, then active"]
+    K --> L["7. Use and manage the card<br/>load, balance, freeze, details"]
+```
 
-After eligibility and any required holder approval, the customer confirms the card type and initial amount. The client should explain any issuance fee, initial deposit, currency, limits, and the fact that the provider may process the request asynchronously.
+Wasabi's cardholder statuses are `wait_audit`, `under_review`, `pass_audit` (approved) and `reject`. Approval is Wasabi's decision: Mamlaka can only observe it, escalate, or help the customer resubmit. KYC is **once per person**: an approved cardholder can hold several cards.
 
-Mamlaka creates a stable idempotency/reference value, records the request, and calls Wasabi's V2 create-card endpoint. A response such as `wait_process` or `processing` is shown as **Processing**, not **Ready**. The customer receives a card only after the final provider state confirms successful issuance and Mamlaka has safely associated the returned provider `cardNo` with the authenticated customer.
+Rules that cause most rejections: names, ID number and the **date of issue must match the ID exactly**; first plus last name at most 32 characters; address and town accept letters, numbers, hyphens and spaces only; the contact email must be unique across the whole merchant account.
 
-### 3.4 Use and manage the card
+## 5. Operations: the idempotent lifecycle
 
-After issuance, the customer can view non-sensitive status and balance information, request sensitive card details through a strongly authorized flow, and perform supported operations such as deposit, withdraw, freeze, unfreeze, or cancel. Each action should display the amount, fees, effect, and confirmation step before submission.
+Every action that touches Wasabi (create holder, create card, deposit, withdraw, freeze, cancel) follows one lifecycle.
 
-Every operation must be authorized against the local owner-to-card mapping. Sensitive card data should be disclosed only to the owner after step-up controls appropriate to the product; it must not be written to normal logs or retained unnecessarily. Card purchase and merchant authorization activity is performed on the card network. The current repository does not implement customer purchase-history views.
+```mermaid
+stateDiagram-v2
+    [*] --> INITIATED: intent recorded, funds held
+    INITIATED --> PENDING: Wasabi accepted
+    INITIATED --> SUCCESS: Wasabi finished at once
+    INITIATED --> FAILED: Wasabi refused
+    INITIATED --> UNKNOWN: timeout or server error
+    UNKNOWN --> PENDING: read back, still processing
+    UNKNOWN --> SUCCESS: read back, done
+    UNKNOWN --> FAILED: read back, refused
+    PENDING --> SUCCESS: webhook or reconcile
+    PENDING --> FAILED: webhook or reconcile
+    SUCCESS --> [*]: hold captured, money spent
+    FAILED --> [*]: hold released, money returned
+```
 
-### 3.5 Track outcomes and get support
+How funds behave in each state:
 
-The customer sees a durable operation history with a reference, amount/currency when applicable, timestamp, and current status. Pending states remain pending until a verified Wasabi callback or provider query supplies a final result. A timeout is an **unknown outcome**, not proof that an operation failed; the client must not blindly submit another charge/funding request.
+| State | Wallet or float |
+|---|---|
+| `INITIATED`, `PENDING`, `UNKNOWN` | **Held** (moved from `available` to `held`). Nothing is lost or released. |
+| `SUCCESS` | Held amount **captured** (spent). |
+| `FAILED` | Held amount **released** (returned). |
 
-Support staff need the Mamlaka reference and Wasabi provider references to investigate. The customer-facing interface must not expose cryptographic material, full identity documents, private keys, or unmasked card details in support logs.
+Guarantees:
 
-## 4. End-to-End System Flow
+- **Idempotent.** The Wasabi order number is derived from the user, the operation and a client `Idempotency-Key`. A repeated request returns the stored state and never charges or sends twice.
+- **Exactly once.** Every ledger change has a unique `entry_key` (`<reference>:<kind>`). A hold is captured **or** released, never both, however many times a callback replays.
+- **Unknown is not failed.** A timeout, a 5xx or an unparsable reply means the provider may have processed it. The operation stays held until a webhook or the reconcile worker reads the real state.
+- **Final states never move backwards.** A late `PENDING` cannot overwrite a recorded `SUCCESS`.
+
+### 5.1 Issuing a card (customer paying from the wallet)
 
 ```mermaid
 sequenceDiagram
-    actor Customer
-    participant Client as Mamlaka Client
-    participant API as FastAPI Service
-    participant DB as MongoDB
-    participant WSB as WasabiCard
+    actor C as Customer
+    participant A as Mamlaka API
+    participant L as Ledger
+    participant W as WasabiCard
+    participant R as Reconcile worker
 
-    Customer->>Client: Sign in and choose card product
-    Client->>API: Request supported card products
-    API->>WSB: Signed cardTypes request
-    WSB-->>API: Product rules, limits, fees
-    API-->>Client: Eligible product options
-
-    opt BIN requires cardholder
-        Customer->>Client: Submit identity details and documents
-        Client->>API: Upload documents / register cardholder
-        API->>WSB: Signed upload and holder requests
-        WSB-->>API: File IDs, holder ID and initial status
-        API->>DB: Save holder mapping and review state
-        WSB-->>API: Signed holder status callback
-        API->>DB: Verify, deduplicate and update holder state
-        API-->>Client: Approved, pending, or action required
+    C->>A: Create card, with Idempotency-Key
+    A->>A: Check ownership, holder approved, card type allowed
+    A->>A: Treasury pre-flight, Wasabi USD covers it
+    A->>L: Hold KES price from the wallet
+    alt insufficient balance
+        L-->>A: refused
+        A-->>C: 402 top up first
+    else held
+        A->>W: Signed createCard
+        alt Wasabi refuses
+            W-->>A: error
+            A->>L: Release hold
+            A-->>C: Failed, wallet unchanged
+        else accepted
+            W-->>A: wait_process
+            A-->>C: Processing
+            W->>A: Webhook, card transaction
+            A->>W: Read the authoritative state
+            A->>L: Capture hold, card active
+            A-->>C: Card ready
+        end
     end
-
-    Customer->>Client: Confirm card and initial amount
-    Client->>API: Create card with idempotency reference
-    API->>DB: Record request as initiated
-    API->>WSB: Signed createCard request
-    WSB-->>API: Provider order and pending/initial result
-    API->>DB: Save provider reference and pending state
-    WSB-->>API: Signed card transaction callback
-    API->>DB: Reconcile event and persist final card state
-    API-->>Client: Show final card state
-
-    Customer->>Client: Request card operation
-    Client->>API: Authenticated operation request
-    API->>DB: Verify ownership and record operation
-    API->>WSB: Signed request with cardNo and unique reference
-    WSB-->>API: Initial result
-    WSB-->>API: Signed operation callback
-    API->>DB: Reconcile status and ledger effects
-    API-->>Client: Updated status and operation history
+    R->>W: If no webhook arrived, read the state
+    R->>L: Capture or release
 ```
 
-### 4.1 Target request path
+## 6. Money, ledgers and settlement
 
-1. **Authenticate and authorize:** Validate the customer's identity and resolve their stable internal user ID. Check that the requested card or holder belongs to them.
-2. **Validate:** Apply Wasabi field names, data types, limits, BIN configuration, operation-specific required fields, and currency rules.
-3. **Record intent:** Create an idempotent local transaction before calling Wasabi. Do not record card creation, deposits, or withdrawals as completed merely because the API returned an HTTP response.
-4. **Sign and send:** Normalize the body once, serialize the exact bytes, sign those exact bytes using RSA/SHA-256 and the merchant private key, and send the body with `X-WSB-API-KEY` and `X-WSB-SIGNATURE`.
-5. **Verify response:** Validate the provider response signature using Wasabi's platform public key before trusting the response body.
-6. **Reconcile:** Process signed callback events idempotently, update transaction and cardholder/card state, and respond with Wasabi's documented success acknowledgement. Query provider transaction/card status to recover from missed callbacks.
-7. **Notify customer:** Expose the reconciled application state, not an unverified or incomplete provider response.
+### 6.1 Three separate balances
 
-The repository currently implements outbound body signing and calls the listed card APIs, but steps 1, 3, 5, and 6 are incomplete or partial as described in Section 8.
+The most important thing to understand is that **three different pools of money exist**, owned by different parties.
 
-## 5. Current API Surface
+```mermaid
+flowchart TB
+    subgraph P1["Pool 1: customer money"]
+        CW["Customer wallet<br/>KES ledger in this service"]
+    end
+    subgraph P2["Pool 2: reseller prepayment"]
+        FL["Reseller float<br/>KES ledger, credited by an admin"]
+    end
+    subgraph P3["Pool 3: real USD"]
+        WB["Wasabi merchant balance<br/>USD, held by Wasabi"]
+    end
 
-All paths below are mounted beneath `/api/v1/cards`, except the webhook path. The route definitions are in `app/cards/routeendpoint.py` and application mounting is in `app/main.py`.
+    MM["Mobile money<br/>M-Pesa, Airtel"] -->|"top-up credits"| CW
+    CW -->|"card operation: hold then capture"| OP["Card operation"]
+    RP["Reseller pays Mamlaka<br/>bank or M-Pesa"] -->|"admin credits with a reference"| FL
+    FL -->|"partner card operation: hold then capture"| OP
+    OP -->|"Wasabi deducts load plus card fee"| WB
+    FU["Mamlaka funds Wasabi<br/>crypto deposit"] --> WB
+    WB --> TR{"Treasury check<br/>real USD covers floats?"}
+    FL --> TR
+```
 
-| Route | Purpose | Current implementation notes |
-|---|---|---|
-| `POST /supported-BINS/types` | Read available Wasabi card products | Authenticated. Product eligibility should be filtered and explained by Mamlaka. |
-| `GET /list-BINS?page=1&pageSize=10` | List cards | Authenticated. Current request adds `userId`, which is not in the documented Wasabi card-list filters; local ownership filtering is required. |
-| `GET /diagnostic/kenya-cities` | Look up Kenya city codes | Authenticated diagnostic endpoint; not a general customer workflow. |
-| `POST /kyc/upload` | Upload a KYC file | Currently has no authentication dependency or explicit size/type enforcement in the route. Wasabi documents JPG/PNG/PDF and a 2 MB maximum. |
-| `POST /cardholder/register` | Register a cardholder | Authenticated, but the route does not persist holder status or associate the result with a local user. |
-| `POST /kyc/submit` | Submit a Wasabi work ticket | Authenticated and currently routed through the transaction-aware service. This is a work ticket, not a replacement for provider cardholder creation/approval. |
-| `POST /create` | Create a virtual card | Authenticated and transaction-logged, but holder approval/ownership and card persistence are not enforced. |
-| `POST /info` | Get card information | Current schema uses `cardId`; Wasabi documents `cardNo`. |
-| `POST /sensitive` | Request encrypted sensitive card details | Current schema uses `cardId`; strong owner authorization and provider-data decryption are not implemented. |
-| `POST /balance` | Get card balance | Current schema uses `cardId`; Wasabi documents `cardNo`. |
-| `POST /deposit` | Fund a card | Current schema uses `cardId`; amount is converted to an integer by the client. Local wallet/ledger accounting is not connected. |
-| `POST /withdraw` | Withdraw from a card | Current schema uses `cardId`; amount is converted to an integer by the client. Local wallet/ledger accounting is not connected. |
-| `POST /freeze`, `POST /unfreeze` | Freeze or unfreeze a card | Current schema uses `cardId`; required `merchantOrderNo` is not added by these routes. |
-| `POST /cancel` | Cancel a card | Current schema uses `cardId`; the request reference is generated, but ownership and local state changes are not implemented. |
-| `POST /api/v1/webhooks/wasabi` | Receive Wasabi callbacks | Mounted under `/api/v1/webhooks`, not `/api/v1/cards`. Current handler stores raw JSON but does not verify or reconcile it. |
+- A **customer wallet** holds KES the customer has paid in. It is a ledger number backed by money in the payments gateway account.
+- A **reseller float** is a ledger number that says "this reseller has prepaid Mamlaka this much". It is **not cash**: it is only a promise unless real USD backs it.
+- The **Wasabi merchant balance** is the only place real USD is deducted when a card is created. Mamlaka funds it directly with Wasabi.
 
-The current README lists `/api/v1/cards/work-order/submit` and `/api/v1/cards/wasabi`; those do not match the routes mounted by the code. The implemented paths are `/api/v1/cards/kyc/submit` and `/api/v1/webhooks/wasabi`.
+### 6.2 Settlement cycle with a reseller
 
-## 6. Provider and Cryptographic Integration
+```mermaid
+sequenceDiagram
+    actor U as Reseller's customer
+    participant R as Reseller
+    participant M as Mamlaka Virtual Cards
+    participant W as WasabiCard
+    actor Ops as Mamlaka admin
 
-### 6.1 Environments and credentials
+    U->>R: Pays KES to the reseller
+    R->>Ops: Reseller prepays Mamlaka (bank or M-Pesa), with a payment reference
+    Ops->>M: Credit float: credit-float slug amount reference
+    Note over M: The same reference twice is a no-op, so a repeat cannot double-credit
+    R->>M: Issue card for customer (Partner API)
+    M->>M: Hold cost from the float
+    M->>W: createCard
+    W-->>M: Success, Wasabi deducts load plus fee in USD
+    M->>M: Capture hold, float reduced
+    M-->>R: Event operation.updated SUCCESS
+    Ops->>W: Keep the Wasabi USD balance funded
+    M->>M: Treasury check compares Wasabi USD with all floats
+```
 
-`WASABI_BASE_URL` and `WASABI_API_KEY` are read in `app/core/config.py`. The base URL must be the exact production merchant API endpoint provided by Wasabi for the live account. The published quickstart names the sandbox endpoint and notes that production requires merchant IP allowlisting; do not derive or guess a live URL.
+### 6.3 Pricing
 
-The deployment must pair the production API key with the correct merchant RSA private key and corresponding merchant public key registered in Wasabi. The merchant private key signs outbound API requests. Wasabi's platform public key verifies signed responses and callbacks. These are different trust roles and must not be interchanged. The repository has key paths/configuration, but platform response/callback verification is not wired into the flow.
+A card operation has a **cost**, set by Mamlaka from the live Wasabi catalog: the opening load plus the card fee, converted from USD to KES at the configured rate (`FX_KES_PER_USD`). A reseller prices its own customer from that cost.
 
-### 6.2 Outbound requests
+```mermaid
+flowchart LR
+    Q["Reseller asks GET /quote<br/>kind, amount, cardTypeId"] --> COST["Mamlaka cost in KES<br/>(load + card fee) x rate"]
+    COST --> MARGIN["Reseller adds its own margin<br/>e.g. 2 percent"]
+    MARGIN --> CHG["Charge to the reseller's customer"]
+    COST -.->|"debited from the reseller float"| FLT["Float"]
+    CHG -.->|"collected by the reseller"| REV["Reseller revenue"]
+```
 
-`app/cards/wasabi_client.py` removes `None` values, creates sorted compact JSON, and sends it as the request body. `app/core/signature.py` signs compact sorted JSON using RSA PKCS#1 v1.5 with SHA-256 and Base64 encodes the signature. This aligns with the Wasabi quickstart's broad signing method; the critical production test is that the exact bytes signed are the exact bytes transmitted for every payload type.
+Worked example (rate 129.50, a $10 card with a $2 card fee): cost = (10 + 2) x 129.50 = **KES 1,554.00** from the float. With a 2 percent margin the reseller charges its customer **KES 1,585.08** and keeps KES 31.08. Quoting from Mamlaka's own cost means a rate change on Mamlaka's side can never leave the reseller out of pocket.
 
-The client currently casts `amount` to `int`, prints payloads/signatures/responses, and does not verify response signatures or robustly translate HTTP/non-JSON errors. Do not treat a network timeout or parse error as a definite provider-side failure: the provider may have processed the request. Use stable idempotency references and reconciliation before retrying.
+### 6.4 Treasury: keeping the pools honest
 
-### 6.3 Live rollout boundary
+```mermaid
+flowchart TD
+    S["Every 15 minutes, or on demand"] --> R["Read Wasabi available USD"]
+    R --> K{"Readable?"}
+    K -->|"no"| U["Unknown: keep the last status, never alert, never block"]
+    K -->|"yes"| F["Sum all reseller floats in KES<br/>convert to USD at the rate"]
+    F --> A{"Wasabi USD below floats?"}
+    A -->|"yes"| UF["UNDERFUNDED<br/>prepaid more than we hold"]
+    A -->|"no"| B{"Below the alert threshold?"}
+    B -->|"yes"| LO["LOW"]
+    B -->|"no"| OK["OK"]
+    UF --> AL["Alert: now, then every 6 hours"]
+    LO --> AL
+    OK --> RC["If it was bad, alert once: recovered"]
+```
 
-Production activation is an operational change, not just an environment-variable swap. Before release, verify with Wasabi:
+The same check runs as a **pre-flight** on every issuance and card deposit: if the real Wasabi balance cannot cover the request (plus a configured reserve), it is refused cleanly before anything is held, and the caller is told only that the service is temporarily unavailable. If Wasabi cannot be asked, requests are not blocked: Wasabi's own refusal is still handled and refunded.
 
-- The live API hostname, merchant account, product/BIN access, and enabled operations.
-- Production API key and registered merchant public key corresponding to the mounted private key.
-- Wasabi platform verification public key for signed responses and notifications.
-- Production egress IP allowlisting and the publicly reachable HTTPS callback URL.
-- Callback categories enabled and any provider-side test procedure/limits.
+## 7. Top-ups and withdrawals
 
-Keep sandbox and production credentials, keys, callback URLs, databases, and deployments separated. Live smoke tests should use provider-approved accounts and the smallest permitted amounts.
+Customers fund the KES wallet through the Mamlaka payments gateway (M-Pesa and Airtel) or, optionally, direct Safaricom Daraja. The wallet is credited only after the provider confirms payment **and** the confirmed amount equals the amount requested.
 
-## 7. Persistence and Financial Records
+```mermaid
+sequenceDiagram
+    actor C as Customer
+    participant A as Mamlaka API
+    participant G as Payments gateway
+    participant P as Customer's phone
+    participant L as Ledger
+    participant R as Reconcile worker
 
-`app/core/database.py` defines these MongoDB collections:
+    C->>A: Top up, phone and amount, with Idempotency-Key
+    A->>A: Record the top-up as PENDING
+    A->>G: Collect, externalId and callbackUrl
+    G->>P: STK prompt
+    P-->>G: Customer approves with a PIN
+    G->>A: Signed callback, X-Mamlaka-Signature
+    A->>A: Verify HMAC over the raw body, reject if it fails
+    A->>A: Check reference and amount match the request
+    A->>L: Credit the wallet once, unique entry key
+    A-->>C: Wallet credited
+    R->>G: If no callback arrived, ask the gateway for the status
+    R->>L: Credit once, same entry key, so no double credit
+```
 
-| Collection | Intended responsibility | Current use in this repository |
-|---|---|---|
-| `users` | Customer identity references and account state | Defined; not used by the card flow shown. |
-| `wallets` | Mamlaka customer balances or funding accounts | Defined; not integrated into card deposit/withdraw routes. |
-| `cards` | Provider card ID, owning user, BIN, status and safe display metadata | Defined; not written by card issuance flow shown. |
-| `transactions` | Mamlaka operation reference, request type, status, provider response/reference, timestamps | Used by create-card and KYC-work-order service; webhooks are currently inserted here as raw events. |
-| `ledger` | Immutable financial debits, credits, fees and reconciliation entries | Defined; not integrated into the current Wasabi card operations. |
+Withdrawals to a phone follow the same lifecycle as card operations: the KES is **held first**, the gateway is called once, a confirmed payout captures the hold, a failure releases it, and an unknown outcome keeps it held. Withdrawals can only go to the phone number registered on the account and are off by default (`WALLET_WITHDRAW_ENABLED`), because they move real money out.
 
-Before live customer funds are enabled, define transaction and ledger semantics with finance/product. A Wasabi deposit request is not automatically a Mamlaka wallet debit: this repository does not currently debit a customer wallet, reserve funds, write balanced ledger entries, or reconcile Wasabi's merchant account. Decide and implement the funding source and accounting contract before describing deposits as wallet-backed.
+## 8. The reseller (partner) model
 
-Recommended data protections and indexes:
+A reseller is a **tenant**. Its customers are stored as `<tenant_id>:<externalId>`, so every wallet, cardholder, card and operation is isolated per reseller by the same ownership checks the first-party app uses. A reseller can never read or act on another reseller's customers: the answer is simply "not found".
 
-- Unique index on the Mamlaka idempotency key / `merchant_order_no` for each transaction namespace.
-- Unique index on Wasabi callback `X-WSB-REQUEST-ID` or a documented stable event identity for deduplication.
-- Indexes for card lookup by provider `cardNo` and owner ID, holder lookup by provider `holderId` and owner ID, and transaction lookup by provider `orderNo` and Mamlaka reference.
-- Store the minimum KYC data needed to operate and support the product. Avoid copying full ID numbers, raw documents, PAN, CVV, or private key material into generic transaction records and logs.
-- Define access control, encryption at rest/in transit, retention/deletion, audit access, backups, and incident procedures for sensitive records.
+### 8.1 Onboarding a reseller
 
-## 8. Production Readiness Findings
+```mermaid
+sequenceDiagram
+    actor Ops as Mamlaka admin
+    participant S as Admin script
+    participant DB as MongoDB
+    actor R as Reseller developer
 
-These findings are implementation gaps, not customer-facing promises.
+    Ops->>S: create-tenant name, slug, webhook URL
+    S->>DB: Store tenant with SHA-256 hash of the API key
+    S-->>Ops: API key and webhook secret, shown once
+    Ops->>R: Send both over a private channel, with the integration guide
+    Ops->>S: credit-float slug, amount, payment reference
+    S->>DB: Ledger credit, idempotent on the reference
+    R->>S: Webhook URL provided later
+    Ops->>S: set-webhook slug, url
+    R->>DB: First call GET /balance with X-API-Key
+    Note over R,DB: 200 and the float balance means authorization works
+```
 
-### P0: Resolve before live card mutations
+The API key is a 256-bit random value, shown once and stored only as a hash. A lost or leaked key is replaced with `rotate-key`; the old key stops working immediately.
 
-1. **Match Wasabi's API contract.** Use `cardNo`, not `cardId`, for documented card endpoints. Add `merchantOrderNo` to freeze/unfreeze and confirm every payload against the current provider spec. Do not send undocumented `userId` to card listing as a security control.
-2. **Preserve money precision.** Replace float/int amount handling with decimal-safe validation and serialization; test fractional values and currency scale.
-3. **Authenticate, authorize, and enforce ownership.** Associate JWT subject with a real user record; verify every requested holder/card belongs to that user. Protect `/kyc/upload`. Remove or disable the unauthenticated `/token` test endpoint in production.
-4. **Verify Wasabi responses and callbacks.** Validate `X-WSB-SIGNATURE` against the raw response/callback bytes with Wasabi's public key. Reject invalid signatures. Persist callback request IDs and process events idempotently. Return Wasabi's documented callback acknowledgement.
-5. **Do not expose secrets in container images/logs.** Rename/fix the Docker ignore file to `.dockerignore`, explicitly exclude `.env`, keys, `.git`, virtual environments, and local artifacts, and inject secrets at runtime. Remove full payload/signature logging.
-6. **Make operations idempotent and reconcilable.** Persist intent before provider calls; use stable client idempotency references; treat unknown timeouts as pending; query provider status and reconcile callbacks before retrying.
+### 8.2 A reseller's customer, end to end
 
-### P1: Complete before onboarding customers
+```mermaid
+sequenceDiagram
+    actor U as Reseller's customer
+    participant R as Reseller server
+    participant P as Partner API
+    participant W as WasabiCard
 
-- Persist cardholder/card data and provider states; block create until any required cardholder is approved.
-- Validate uploaded file type/size (Wasabi documents JPG, PNG, PDF up to 2 MB); bind uploads and holder submissions to the authenticated customer.
-- Implement encrypted sensitive response decryption using the merchant private key, and a narrowly authorized delivery path. Never persist/log CVV.
-- Add response/error handling for HTTP status, malformed provider JSON, connection timeout, and provider business error codes. Do not translate every error to a definitive failed transaction.
-- Implement local wallet and ledger behavior only after its funding, reservation, refund, fee, and reconciliation rules are approved.
-- Align public documentation with actual API paths and use a real production identity/authentication provider rather than the test token flow.
+    R->>P: POST /customers, externalId, name, email, phone
+    R->>P: POST /customers/id/kyc/documents, front, back, selfie
+    P->>W: Upload files, returns file ids
+    R->>P: POST /customers/id/kyc, details and file ids
+    P->>W: Register cardholder
+    W-->>P: holderId, status wait_audit
+    Note over W: Wasabi reviews, usually a few hours
+    W->>P: Webhook, holder status changed
+    P->>W: Read the authoritative status
+    P->>R: Signed event kyc.status_changed
+    alt rejected
+        R->>P: PUT /customers/id/kyc/holderId, corrected details
+    else approved
+        R->>P: GET /quote, kind issue
+        R->>P: POST /customers/id/cards, amount, Idempotency-Key
+        P->>P: Hold the cost from the reseller float
+        P->>W: createCard
+        W->>P: Webhook, card transaction
+        P->>R: Signed event operation.updated SUCCESS
+        R-->>U: Card ready
+        R->>P: POST /customers/id/cards/details, after re-authenticating the user
+        P-->>R: Number, expiry, CVV, never stored or logged
+    end
+```
 
-### P2: Operational hardening
+### 8.3 Events sent to a reseller
 
-- Add metrics and alerts for callback verification failures, callback delays, pending transactions, provider errors, duplicate references, and reconciliation differences.
-- Add a scheduled reconciliation process for callbacks missed during outages, with an operator-visible exception queue.
-- Add rate limits, request-size limits, TLS enforcement, secret rotation procedures, backup/restore tests, and production incident runbooks.
-- Add provider-approved integration tests that cannot accidentally target live funds by default.
+Events are stored first, then delivered, so a reseller that is briefly down still receives everything. Delivery is **at least once**: a reseller must ignore repeats using the event `id`.
 
-## 9. Recommended Test Plan
+```mermaid
+flowchart TD
+    E["Event created<br/>kyc.status_changed, card.updated, operation.updated"] --> ST["Stored as PENDING"]
+    ST --> SD["POST to the reseller webhook URL<br/>header X-Mamlaka-Signature, HMAC-SHA256 of the body"]
+    SD --> Q{"2xx answer?"}
+    Q -->|"yes"| DONE["DELIVERED"]
+    Q -->|"no"| N{"Attempts left?"}
+    N -->|"yes"| BO["Wait: 1 min, 5 min, 30 min, 2 h, 6 h, then daily"]
+    BO --> SD
+    N -->|"no"| FAIL["FAILED, logged for an operator"]
+    ST --> NU{"No webhook URL set?"}
+    NU -->|"yes"| SK["SKIPPED, not retried"]
+```
 
-1. **Unit tests:** Canonical JSON/signature byte equivalence; response/callback signature verification; required fields and bounds; decimal amounts; generated order reference length; file type/size; status mapping; callback deduplication.
-2. **Contract tests:** Compare each client endpoint and request body with the current Wasabi docs, including `cardNo`, `merchantOrderNo`, paging maximums, response envelopes, and operation-specific fields.
-3. **Database tests:** Unique idempotency constraints, owner isolation, holder/card persistence, transaction transitions, duplicate/out-of-order callbacks, and recovery after a simulated timeout.
-4. **Sandbox end-to-end:** Product lookup, conditional holder registration and approval, card creation, pending-to-final callback, info/balance, supported card operations, and reconciliation. Confirm failure behavior as well as success.
-5. **Production smoke test:** Only after Wasabi confirms live credentials, IP allowlisting, callback setup, and an approved test profile. Run read-only calls first, then one explicitly authorized minimal-value mutation at a time; reconcile against both Wasabi's portal and local records before expanding.
+### 8.4 A worked example: Jasiri
 
-Never run a test with real production funds merely to discover the expected payload or status behavior.
+Jasiri is a retail app that adds virtual cards as a funding channel under **Deposits**. It is a reseller that also keeps its own customer wallets.
 
-## 10. Customer-Facing Service Commitments
+```mermaid
+sequenceDiagram
+    actor U as Jasiri user
+    participant J as Jasiri backend
+    participant M as Mamlaka Partner API
+    participant W as WasabiCard
 
-A customer-facing Mamlaka product should communicate that:
+    U->>J: Open Deposits then Virtual Card
+    J->>M: GET /quote, kind issue
+    M-->>J: Cost in KES
+    J->>J: Price = cost plus Jasiri margin, shown to the user
+    U->>J: Confirm with email code and authenticator code
+    J->>J: Debit the user's KES wallet first, keyed by the operation id
+    J->>M: POST cards, Idempotency-Key = operation id
+    alt refused
+        M-->>J: error
+        J->>J: Refund the wallet once
+    else timeout
+        Note over J: Keep the money held. Settle later by replaying the same key
+    else accepted
+        M->>W: createCard
+        W-->>M: success
+        M->>J: Signed event operation.updated
+        J->>J: Mark the charge complete, money stays spent
+    end
+    J-->>U: Card page with balance, Load, Details, Freeze
+```
 
-- Card availability depends on the selected product, region, provider rules, and identity review.
-- A submitted application or card operation can remain pending while Wasabi processes it.
-- Fees, limits, currencies, supported uses, and restrictions vary by card product and should be shown before confirmation.
-- Card controls and balances can take time to reflect provider-side processing; the operation history is the source for current request status.
-- Sensitive card information is protected and shown only to the authorized cardholder.
-- A support request should use an operation reference, not identity documents, private keys, or card security codes in ordinary messages.
+Jasiri's wallet debit is its own money rule: Jasiri charges the user first, calls Mamlaka with the operation id as the idempotency key, and refunds exactly once on a definitive refusal.
 
-These are product requirements. They are not all implemented in the current repository.
+## 9. Reliability: reconciliation and the webhook trust model
 
-## 11. Current State in One View
+**Webhooks are hints, not truth.** A callback only says *which* holder, card or operation changed. Every handler re-reads the authoritative state from Wasabi's API, so a forged callback can at worst cause an extra read. Callbacks are deduplicated on Wasabi's `X-WSB-REQUEST-ID`; gateway callbacks and reseller events are authenticated with an HMAC over the raw body.
 
-| Capability | Repository status |
+The reconcile worker covers everything a webhook missed. Wasabi stops retrying a webhook after about 37 hours, so the worker must always run.
+
+```mermaid
+flowchart TD
+    T["Every 3 minutes"] --> O1["1. Wasabi operations still in flight<br/>read back and settle"]
+    O1 --> O2["2. Finished operations whose wallet effect<br/>was never applied: apply it"]
+    O2 --> O3["3. Top-ups with no callback<br/>ask the provider, credit once"]
+    O3 --> O4["4. Withdrawals with no callback<br/>ask the gateway, capture or release"]
+    O4 --> O5["5. Reseller KYC still in review<br/>announce changes, retry undelivered events"]
+    O5 --> O6["6. Treasury check<br/>throttled to 15 minutes"]
+    O6 --> O7["7. Every wallet counter equals its ledger?<br/>log LEDGER MISMATCH if not"]
+```
+
+## 10. Security model
+
+| Area | Control |
 |---|---|
-| FastAPI app and card route mounting | Present |
-| Wasabi outbound RSA request signing | Present; must verify byte-level contract and remove sensitive logs |
-| Supported BINs, cardholder, card, funding, and control client calls | Mostly present; several route schemas/payloads mismatch documented fields |
-| Transaction record for card creation and work-order submission | Partial; not consistently applied to all provider mutations |
-| Holder/card records and user ownership checks | Not implemented in the reviewed flow |
-| Response and webhook signature verification | Not implemented |
-| Callback event deduplication and transaction/card reconciliation | Not implemented |
-| Exact decimal-safe financial handling | Not implemented; current amount cast truncates decimals |
-| Local wallet/ledger funding and reconciliation | Collections exist; card routes do not integrate them |
-| Production secret/image isolation | Git ignores secrets, but Docker ignore filename/content must be fixed |
-| Customer-facing UI and support workflows | Not present in this repository |
+| Customer authentication | JWT (HS256); bcrypt (cost 12) passwords with a strength policy; lockout after 5 failed logins; per-endpoint rate limits; no account enumeration |
+| Ownership | Every card, holder, wallet, top-up and operation is filtered by the token's user, or by the reseller's tenant |
+| Reseller authentication | `X-API-Key`, stored only as a SHA-256 hash, shown once, rotatable; 600 requests per minute per reseller |
+| Requests to Wasabi | RSA SHA-256 signature over the exact serialized bytes sent |
+| Inbound webhooks | Wasabi: re-read state, deduplicate. Gateway and reseller events: HMAC-SHA256 over the raw body, constant-time compare |
+| Card data | Full number and CVV are never stored or logged. The reseller reveal endpoint audits who revealed which card (never the values) and is `Cache-Control: no-store` |
+| Secrets | `.env` and `app/keys/*.pem` are git-ignored and mounted at runtime, never baked into the image |
+| Production switches | The test token, dev email preview and auto-verify are forced off when `APP_ENV=production` |
+| Documents | KYC images are validated for type (JPG, PNG, PDF), magic bytes and 2 MB size, and sent to Wasabi. Identity values are not kept in general-purpose records |
 
-## 12. Documentation References
+## 11. Status: what is done, and what must still close
 
+### 11.1 Resolved since version 1.0
+
+| v1.0 finding | Now |
+|---|---|
+| Wrong field names (`cardId`), missing `merchantOrderNo` | Contract aligned: `cardNo`, `merchantOrderNo` on every mutation |
+| Float and integer amount handling | Decimal-safe amounts; integer minor units in the ledger |
+| No ownership or real users | Real accounts, ownership enforced on every route, uploads authenticated; test token off in production |
+| Callbacks not verified or reconciled | Deduplicated, treated as hints, plus a reconcile worker |
+| Secrets in the image, payload logging | `.dockerignore` fixed, secrets injected at runtime, bodies not logged |
+| No idempotency or reconciliation | Intent recorded first, deterministic references, unknown outcomes held |
+| Holder and card data not persisted | Holders, cards and operations persisted and linked to owners |
+| No wallet or ledger | Wallet ledger with holds, M-Pesa and gateway top-ups, withdrawals |
+| No UI | A user app exists in a separate repository |
+| No reseller support | Partner API, tenants, floats, signed events, admin script |
+
+### 11.2 Open before real customers
+
+These are known and not yet fixed:
+
+1. **Ledger atomicity.** A wallet counter and its ledger entry are written in two steps. A crash between them can leave a hold with no ledger entry. The reconcile worker detects a mismatch but does not repair it. Use MongoDB transactions.
+2. **Customer money routes do not re-check the account.** They authenticate the token only, so a suspended or unverified user keeps access until the token expires.
+3. **Card details on the customer route.** `POST /cards/sensitive` needs a step-up (email code plus authenticator), as the reseller side already does.
+4. **STK push to any number.** A top-up can be started for a phone that does not belong to the account, and money endpoints are not rate-limited.
+5. **Automatic failure of unseen operations.** After 30 minutes without a record at Wasabi, an operation is marked failed and its hold released. If Wasabi's listing lags, a card could be paid for twice. Such cases should go to manual review.
+6. **Wasabi response signatures are not verified**, and the webhook signature algorithm is unconfirmed. Today state is re-read through Wasabi's API instead.
+7. **No password reset**, and the email sender's payload matches no real provider.
+8. **No FX feed.** The KES to USD rate is set by hand and can go stale.
+9. **No sandbox for resellers.** Partners integrate against live Wasabi unless a simulated processor is built.
+10. **Card-data scope.** Revealing full card details puts the revealing system in PCI DSS scope. Prefer a hosted reveal.
+11. **Settlement is manual.** A reseller's payment and its float credit are matched by an administrator; per-reseller fees and automatic settlement are not built.
+12. **Compliance.** Holding customer balances, the data-protection duties around KYC, and the agreement with the card provider are contractual and licensing matters, not code.
+13. **Observability.** There are logs and treasury alerts but no metrics dashboard.
+
+## 12. Live rollout boundary
+
+Production activation is an operational change, not an environment-variable swap. Before release, confirm with Wasabi:
+
+- The live API host, merchant account, card-type access and enabled operations.
+- The production API key and the merchant public key that matches the mounted private key.
+- Production egress IP allowlisting and the public HTTPS webhook URL.
+- The webhook signing algorithm, and the enabled callback categories.
+
+Keep sandbox and production credentials, keys, databases and callback URLs separate. Fund the Wasabi merchant balance before the first card, and use the smallest permitted amounts for live smoke tests. Never run a test with real funds just to discover a payload or status.
+
+## 13. Testing
+
+The automated suite (`python -m pytest -q`) covers signing and canonicalisation, ownership isolation, idempotent operations, hold, capture and release, unknown outcomes, callback deduplication and signatures, the gateway and M-Pesa top-ups, withdrawals, the Partner API (including isolation between resellers and signed event delivery), the treasury pre-flight and alerts. It uses in-memory fakes and never reaches Wasabi, MongoDB or M-Pesa.
+
+Live verification is manual and staged: read-only calls first, then one minimal mutation at a time, reconciled against Wasabi's portal and the local records.
+
+## 14. References
+
+- [README](README.md), [API](docs/API.md), [Deployment](docs/DEPLOY.md), [Operations](docs/OPERATIONS.md)
+- [Reseller integration guide](docs/PARTNER_INTEGRATION_GUIDE.md) and [Partner API reference](docs/PARTNER_API.md)
 - [WasabiCard Quick start](https://wsb.gitbook.io/wasabicard-doc/guides/quickstart.md)
 - [WasabiCard Card API](https://wsb.gitbook.io/wasabicard-doc/api/card/cards.md)
 - [WasabiCard Cardholder API](https://wsb.gitbook.io/wasabicard-doc/api/card/card-holder.md)
-- [WasabiCard Common APIs, upload, and tickets](https://wsb.gitbook.io/wasabicard-doc/api/common.md)
-- [WasabiCard Card issuance process](https://wsb.gitbook.io/wasabicard-doc/guides/card-issuance-process.md)
-- [WasabiCard Card status flow](https://wsb.gitbook.io/wasabicard-doc/guides/card-status-flow.md)
+- [WasabiCard Account API](https://wsb.gitbook.io/wasabicard-doc/api/account.md)
 - [WasabiCard Webhooks](https://wsb.gitbook.io/wasabicard-doc/api/webhooks.md)
