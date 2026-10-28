@@ -1,0 +1,66 @@
+<!doctype html><html><head><meta charset=utf-8><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:#f8fafc;color:#0f172a;width:1440px;height:980px;display:flex;overflow:hidden}
+.side{width:256px;background:#fff;border-right:1px solid #e2e8f0;padding:16px;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid #e2e8f0;border-radius:16px;margin-bottom:18px}
+.logo{width:44px;height:44px;border-radius:12px;background:#10b981;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800}
+.brand b{display:block;font-size:17px;letter-spacing:.4px}.brand small{color:#3b82f6;font-weight:700;font-size:11px;letter-spacing:1px}
+.sec{font-size:10px;letter-spacing:1.5px;color:#64748b;font-weight:700;margin:14px 10px 6px}
+.nav{padding:11px 14px;border-radius:12px;font-size:14px;color:#475569;font-weight:500}
+.nav.on{background:#d1fae5;color:#059669;font-weight:700}
+.main{flex:1;display:flex;flex-direction:column}
+.top{height:64px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;padding:0 36px;font-weight:700;font-size:17px;justify-content:space-between}
+.av{width:34px;height:34px;border-radius:50%;background:#fde68a}
+.page{width:1000px;margin:26px auto;display:flex;flex-direction:column;gap:20px}
+.hd{display:flex;gap:16px;align-items:center}
+.back{width:42px;height:42px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:18px}
+h2{font-size:24px;font-weight:800;display:flex;gap:8px;align-items:center}.sub{font-size:12px;color:#64748b;margin-top:2px}
+.panel{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.note{padding:12px 16px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;color:#059669;font-size:14px;font-weight:600}
+.card{position:relative;border-radius:20px;padding:26px 28px;color:#fff;background:linear-gradient(135deg,#34d399,#0d9488);overflow:hidden;height:215px;box-shadow:0 12px 28px rgba(13,148,136,.25)}
+.card:before,.card:after{content:'';position:absolute;border-radius:50%;background:rgba(255,255,255,.10)}
+.card:before{width:260px;height:260px;right:-70px;top:-90px}.card:after{width:200px;height:200px;right:60px;bottom:-130px}
+.row{display:flex;justify-content:space-between;align-items:flex-start;position:relative}
+.vc{font-size:12px;font-weight:700;letter-spacing:3px;opacity:.92}
+.chip{font-size:10px;font-weight:700;padding:4px 9px;border-radius:9px;background:rgba(0,0,0,.20)}
+.num{font-family:ui-monospace,Menlo,monospace;font-size:24px;letter-spacing:5px;margin-top:34px;opacity:.96;position:relative}
+.bal{margin-top:22px;display:flex;justify-content:space-between;align-items:flex-end;position:relative}
+.bal small{font-size:10px;opacity:.8;letter-spacing:1px}.bal b{display:block;font-size:30px;margin-top:2px}
+.mc{display:flex;align-items:center;gap:0}.mc i{width:30px;height:30px;border-radius:50%;display:block}.mc i:first-child{background:#eb001b;opacity:.95}.mc i:nth-child(2){background:#f79e1b;margin-left:-11px;opacity:.95}
+.mc span{font-size:13px;font-weight:700;margin-left:10px;opacity:.95}
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}
+.btn{padding:11px;border:1px solid #e2e8f0;border-radius:12px;font-size:13px;font-weight:700;text-align:center;color:#334155}
+.mini{font-size:12px;color:#64748b;margin-top:14px}
+h3{font-size:14px;font-weight:800;margin-bottom:10px}
+.li{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:1px solid #f1f5f9;font-size:14px}.li:first-of-type{border-top:0}
+.li small{display:block;color:#64748b;font-size:12px;margin-top:2px}
+.ok{font-size:12px;font-weight:700;color:#059669;background:#ecfdf5;border:1px solid #a7f3d0;padding:4px 10px;border-radius:9px}
+.ov{position:absolute;inset:0;background:rgba(2,6,23,.62);display:flex;align-items:center;justify-content:center}
+.modal{width:440px;background:#fff;border:1px solid #e2e8f0;border-radius:18px;padding:26px}
+.mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}.mh b{font-size:18px}.mh span{font-size:12px;color:#64748b}
+.f{display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-top:1px solid #e2e8f0}.f:first-of-type{border-top:0}
+.f small{font-size:10px;letter-spacing:1.2px;color:#94a3b8;text-transform:uppercase}.f p{font-family:ui-monospace,Menlo,monospace;font-size:17px;margin-top:3px}
+.f a{font-size:12px;color:#10b981;font-weight:700}
+.done{margin-top:16px;padding:13px;border-radius:12px;background:#10b981;text-align:center;font-weight:800;font-size:14px}
+.tag{position:absolute;right:18px;bottom:14px;font-size:11px;color:#94a3b8}
+</style></head><body style='position:relative'><div class=side><div class=brand><div class=logo>⇄</div><div><b>JASIRI</b><small>RETAIL APP</small></div></div>
+<div class=sec>MAIN</div><div class=nav>Dashboard</div><div class=nav>My Wallets</div>
+<div class=sec>ACTIONS</div><div class='nav on'>Deposits</div><div class=nav>Convert</div><div class=nav>Send to Jasiri User</div><div class=nav>Withdrawals</div><div class=nav>Redeem Airtime</div>
+<div class=sec>ACCOUNT</div><div class=nav>Transactions</div><div class=nav>Profile</div><div class=nav>KYC Verification</div></div><div class=main><div class=top><span>Deposit Funds</span><div class=av></div></div>
+<div class=page>
+<div class=hd><div class=back>←</div><div><h2>💳 Virtual Card</h2><div class=sub>Get a Mastercard and load it from your KES wallet.</div></div></div>
+
+<div class=panel>
+ <div class=card><div class=row><span class=vc>VIRTUAL CARD</span><span class=chip>NORMAL</span></div>
+  <div class=num>•••• •••• •••• ••••</div>
+  <div class=bal><div><small>BALANCE</small><b>$10.00</b></div><div class=mc><i></i><i></i><span>Mastercard</span></div></div></div>
+ <div class=acts><div class=btn>＋ Load</div><div class=btn>👁 Details</div><div class=btn>❄ Freeze</div></div>
+ <div class=mini>↻ Refresh balance</div></div>
+<div class=panel><h3>Card activity</h3>
+ <div class=li><div>Card issued · $10.00<small>KES 1,585.08 · 28 Oct 2026, 14:02</small></div><span class=ok>Completed</span></div>
+</div></div><div class=tag>SAMPLE – illustrative data</div><div class=ov><div class=modal><div class=mh><b>Card details</b><span>👁 Show</span></div>
+<div class=f><div><small>Card number</small><p>5240 1311 2222 3333</p></div><a>⧉ Copy</a></div>
+<div class=f><div><small>Expiry</small><p>10/29</p></div><a>⧉ Copy</a></div>
+<div class=f><div><small>CVV</small><p>123</p></div><a>⧉ Copy</a></div>
+<div style='font-size:12px;color:#94a3b8;margin-top:10px'>Keep these private. They disappear from this screen in 45 seconds.</div>
+<div class=done>Done</div></div></div></body></html>

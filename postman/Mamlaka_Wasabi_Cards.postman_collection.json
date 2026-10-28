@@ -1,0 +1,948 @@
+{
+  "info": {
+    "name": "Mamlaka Wasabi Virtual Cards",
+    "description": "Run folders in order. NOTE: WASABI_BASE_URL in .env is Wasabi PRODUCTION, so anything that reaches Wasabi is real.\nFolder 1 is read-only and safe. Folders 2-4 have real consequences - read each request description first.\nEvery mutation needs the Idempotency-Key header (pre-filled with a fresh GUID).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "0 - Setup",
+      "description": "",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "No auth. Confirms the app is up.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Get test token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Only exists when ENABLE_TEST_TOKEN=true and APP_ENV is not production. Saves {{token}} automatically. Subject = testuser.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.expect(j.access_token).to.be.a('string');",
+                  "pm.environment.set('token', j.access_token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 - Read-only (safe, hits live Wasabi but changes nothing)",
+      "description": "",
+      "item": [
+        {
+          "name": "Card types (BINs)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/supported-BINS/types",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "supported-BINS",
+                "types"
+              ]
+            },
+            "description": "Live catalog. Expect cardTypeId 111078 and 111078, needCardHolder=true."
+          }
+        },
+        {
+          "name": "Kenya town codes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/diagnostic/kenya-cities",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "diagnostic",
+                "kenya-cities"
+              ]
+            },
+            "description": "Town codes for the cardholder 'town' field."
+          }
+        },
+        {
+          "name": "Occupations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/occupations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "occupations"
+              ]
+            },
+            "description": "Optional occupation codes for KYC."
+          }
+        },
+        {
+          "name": "My cards (local)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/list-BINS?page=1&pageSize=10",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "list-BINS"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Only cards owned by the token's user. Empty at first."
+          }
+        },
+        {
+          "name": "My cardholders (local)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/cardholders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "cardholders"
+              ]
+            },
+            "description": "Only holders owned by the token's user."
+          }
+        },
+        {
+          "name": "Wallet balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet"
+              ]
+            },
+            "description": "KES available/held. Zero until a top-up succeeds."
+          }
+        },
+        {
+          "name": "Price quote - fund card",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/quote?usd=10&kind=fund",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "quote"
+              ],
+              "query": [
+                {
+                  "key": "usd",
+                  "value": "10"
+                },
+                {
+                  "key": "kind",
+                  "value": "fund"
+                }
+              ]
+            },
+            "description": "503 until FX_KES_PER_USD is set in .env. Expected: 10 USD at rate 130 and 2% spread = 1326.00 KES."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 - KYC (REAL DATA - irreversible once submitted)",
+      "description": "",
+      "item": [
+        {
+          "name": "Upload KYC file",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/kyc/upload",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "kyc",
+                "upload"
+              ]
+            },
+            "description": "JPG, PNG or PDF, max 2 MB. Select a file in the Body tab. Returns Wasabi's file id; repeat for front, back and selfie and note each id.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "// Wasabi's upload response shape isn't documented in what we reviewed; inspect Body then set file ids manually if this is empty.",
+                  "const d = j.data; const id = (d && (d.id || d.fileId || d.fileID)) || (typeof d === 'string' ? d : null);",
+                  "if (id) { pm.environment.set('last_file_id', id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register cardholder (B2C)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/cardholder/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "cardholder",
+                "register"
+              ]
+            },
+            "description": "SUBMITS REAL KYC TO WASABI'S BANK PARTNER. Cannot be edited after submission unless rejected. Use only a real, consenting person's genuine data. ipAddress is set by the server.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardTypeId\": 111078,\n  \"areaCode\": \"+254\",\n  \"mobile\": \"712345678\",\n  \"email\": \"REPLACE@example.com\",\n  \"firstName\": \"REPLACE\",\n  \"lastName\": \"REPLACE\",\n  \"birthday\": \"1990-01-31\",\n  \"nationality\": \"KE\",\n  \"country\": \"KE\",\n  \"town\": \"REPLACE_TOWN_CODE_FROM_CITIES\",\n  \"address\": \"REPLACE 1 Street\",\n  \"postCode\": \"00100\",\n  \"gender\": \"M\",\n  \"idType\": \"GOVERNMENT_ISSUED_ID_CARD\",\n  \"idNumber\": \"REPLACE\",\n  \"issueDate\": \"2020-01-01\",\n  \"idNoExpiryDate\": \"2030-01-01\",\n  \"idFrontId\": \"{{id_front}}\",\n  \"idBackId\": \"{{id_back}}\",\n  \"idHoldId\": \"{{id_selfie}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.data && j.data.holderId) { pm.environment.set('holder_id', j.data.holderId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get cardholder status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/cardholder/{{holder_id}}?refresh=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "cardholder",
+                "{{holder_id}}"
+              ],
+              "query": [
+                {
+                  "key": "refresh",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Re-reads status from Wasabi. Need pass_audit before a card can be created."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 - Wallet top-up via M-Pesa (needs Daraja credentials in .env)",
+      "description": "",
+      "item": [
+        {
+          "name": "Start STK top-up",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/topup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "topup"
+              ]
+            },
+            "description": "Sends a PIN prompt to the phone. 503 until MPESA_* are set. Use Safaricom sandbox first (MPESA_BASE_URL=https://sandbox.safaricom.co.ke).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0712345678\",\n  \"amountKes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.checkout_request_id) { pm.environment.set('checkout_request_id', j.checkout_request_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Top-up status (+ recover missed callback)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/topups/{{checkout_request_id}}?refresh=true",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "topups",
+                "{{checkout_request_id}}"
+              ],
+              "query": [
+                {
+                  "key": "refresh",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "refresh=true asks Daraja directly."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 - Card operations (MOVE MONEY - need LIVE_MONEY_ENABLED=true, FX rate and wallet funds)",
+      "description": "",
+      "item": [
+        {
+          "name": "Create card",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "create"
+              ]
+            },
+            "description": "Needs an approved holder, wallet funds for 10 USD + $2 card fee, and LIVE_MONEY_ENABLED=true. Amount is a string with at most 2 decimals. Holds wallet funds, then calls Wasabi.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardTypeId\": 111078,\n  \"holderId\": \"{{holder_id}}\",\n  \"amount\": \"10\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.cardNo) { pm.environment.set('card_no', j.cardNo); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Card info",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/info",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "info"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Card balance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "balance"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Sensitive details (encrypted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/sensitive",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "sensitive"
+              ]
+            },
+            "description": "Returns Wasabi's ENCRYPTED payload. Decryption is not implemented yet.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Freeze",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/freeze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "freeze"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unfreeze",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/unfreeze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "unfreeze"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Deposit (add USD)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/deposit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "deposit"
+              ]
+            },
+            "description": "Holds KES from the wallet, then funds the card.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\",\n  \"amount\": \"5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Withdraw (back to wallet)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/withdraw",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "withdraw"
+              ]
+            },
+            "description": "Credits the wallet only after Wasabi confirms success.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\",\n  \"amount\": \"5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cancel card (irreversible)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "cancel"
+              ]
+            },
+            "description": "A cancelled card cannot be reactivated.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Submit KYC work ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "New key per send. Paste a fixed value to test replay-safety."
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cards/kyc/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cards",
+                "kyc",
+                "submit"
+              ]
+            },
+            "description": "Manual compliance ticket for a holder stuck in wait_audit.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"REPLACE\",\n  \"target\": \"cardholder\",\n  \"content\": \"REPLACE\",\n  \"tradeType\": \"CARD_ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 - Local callback simulation (no money, simulates providers calling YOU)",
+      "description": "",
+      "item": [
+        {
+          "name": "Simulate Wasabi webhook: card_holder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-WSB-CATEGORY",
+                "value": "card_holder"
+              },
+              {
+                "key": "X-WSB-REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-WSB-SIGNATURE",
+                "value": "invalid-on-purpose"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/wasabi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "webhooks",
+                "wasabi"
+              ]
+            },
+            "description": "Add headers X-WSB-CATEGORY=card_holder and X-WSB-REQUEST-ID=<unique>. Returns 401 while ENABLE_WEBHOOK_SIGNATURE_VALIDATION=true (the real signature can't be forged here). The handler re-reads state from Wasabi; it never trusts this body.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"holderId\": \"{{holder_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Simulate M-Pesa callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mpesa/callback/{{mpesa_callback_secret}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "mpesa",
+                "callback",
+                "{{mpesa_callback_secret}}"
+              ]
+            },
+            "description": "Credits only if Daraja's own STK Query confirms payment, so this alone cannot add money.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Body\": {\n    \"stkCallback\": {\n      \"MerchantRequestID\": \"x\",\n      \"CheckoutRequestID\": \"{{checkout_request_id}}\",\n      \"ResultCode\": 0,\n      \"ResultDesc\": \"ok\",\n      \"CallbackMetadata\": {\n        \"Item\": [\n          {\n            \"Name\": \"Amount\",\n            \"Value\": 10\n          },\n          {\n            \"Name\": \"MpesaReceiptNumber\",\n            \"Value\": \"TEST123\"\n          }\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

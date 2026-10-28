@@ -1,0 +1,55 @@
+# Mamlaka Virtual Cards - API + reconcile worker
+#   docker compose up -d --build
+#   docker compose logs -f api
+#
+# Secrets are NOT baked into the image: env comes from .env at runtime and the RSA keys are
+# mounted read-only. MongoDB is external (Atlas) - add this server's IP to the Atlas allowlist.
+# Wasabi production also requires this server's public IP to be allowlisted by Wasabi.
+
+x-common: &common
+  build:
+    context: .
+  image: mamlaka-virtual-cards:latest
+  env_file: .env
+  environment:
+    # Where config.py looks for keys inside the container (BASE_DIR = /code)
+    RSA_PRIVATE_KEY_PATH: app/keys/private.pem
+    RSA_PUBLIC_KEY_PATH: app/keys/public.pem
+    WASABI_PUBLIC_KEY_PATH: app/keys/wsbpublic.pem
+    # nginx on this host sets X-Forwarded-For; only nginx can reach 127.0.0.1:8000
+    TRUST_PROXY_HEADERS: "true"
+  volumes:
+    - ./app/keys:/code/app/keys:ro
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  api:
+    <<: *common
+    container_name: mamlaka-cards-api
+    # Bound to localhost: nginx terminates TLS and proxies /api/v1/{cards,wallet,webhooks,mpesa} and /health here.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+
+  # Recovers missed Wasabi webhooks / M-Pesa callbacks and checks wallet-vs-ledger consistency.
+  # Wasabi gives up retrying webhooks after ~37h, so this must always run.
+  reconcile:
+    <<: *common
+    container_name: mamlaka-cards-reconcile
+    command: ["sh", "-c", "while true; do python -m app.jobs.reconcile; sleep 180; done"]
+    depends_on:
+      - api

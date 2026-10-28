@@ -1,0 +1,15 @@
+.env
+**/.env
+.env.*
+*.pem
+*.key
+**/keys/
+.venv/
+**/.venv/
+.git/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+*.log

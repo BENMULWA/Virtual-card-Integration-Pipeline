@@ -1,0 +1,967 @@
+{
+  "info": {
+    "name": "Mamlaka Wasabi Cards API",
+    "description": "End-to-end Postman collection for testing the Wasabi Card Integration proxy. Set the {{base_url}}, {{token}}, and {{idempotency_key}} variables before running.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idempotency_key",
+      "value": "idem-{{$guid}}",
+      "type": "string"
+    },
+    {
+      "key": "card_type_id",
+      "value": "111078",
+      "type": "string"
+    },
+    {
+      "key": "holder_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "card_no",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "amount_usd",
+      "value": "10.00",
+      "type": "string"
+    },
+    {
+      "key": "phone",
+      "value": "0712345678",
+      "type": "string"
+    },
+    {
+      "key": "topup_amount",
+      "value": "100",
+      "type": "string"
+    },
+    {
+      "key": "checkout_request_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verify_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "jane@example.com",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Account - Register",
+      "item": [
+        {
+          "name": "POST /api/v1/users/register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"Str0ng!Passw0rd\",\n  \"fullName\": \"Jane Doe\",\n  \"phone\": \"0712345678\",\n  \"acceptedTerms\": true\n}"
+            },
+            "url": "{{base_url}}/api/v1/users/register"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('token', json.access_token);",
+                  "  pm.collectionVariables.set('user_id', json.user.userId);",
+                  "  console.log('Registered + signed in');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Account - Login",
+      "item": [
+        {
+          "name": "POST /api/v1/users/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jane@example.com\",\n  \"password\": \"Str0ng!Passw0rd\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/users/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('token', json.access_token);",
+                  "  pm.collectionVariables.set('user_id', json.user.userId);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Account - Dev Verification Link",
+      "item": [
+        {
+          "name": "GET /api/v1/users/dev/verification-link",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/users/dev/verification-link?email=jane@example.com",
+            "description": "DEV ONLY (404 in production). Returns the email verification link when no mail provider is configured."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('verify_token', pm.response.json().token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Account - Verify Email",
+      "item": [
+        {
+          "name": "POST /api/v1/users/verify-email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{verify_token}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/users/verify-email"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Account - My Profile",
+      "item": [
+        {
+          "name": "GET /api/v1/users/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/users/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Journey - Current State",
+      "item": [
+        {
+          "name": "GET /api/v1/journey",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/journey",
+            "description": "The full ordered application journey: steps, statuses, current step, next action, progress."
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Journey - Live Stream (SSE)",
+      "item": [
+        {
+          "name": "GET /api/v1/journey/stream",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/journey/stream",
+            "description": "Server-Sent Events. The journey snapshot is sent immediately, then re-sent every time Wasabi changes the application state. Requires EventSource (a browser), Postman shows the raw stream."
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Journey - Event History",
+      "item": [
+        {
+          "name": "GET /api/v1/journey/events/history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/journey/events/history"
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Auth - Get Test Token",
+      "item": [
+        {
+          "name": "POST /token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/token",
+            "description": "Mints a test JWT (only works when ENABLE_TEST_TOKEN=true and APP_ENV != production). Save the access_token as {{token}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.collectionVariables.set('token', json.access_token);",
+                  "  console.log('Token saved:', json.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10 Catalog - Card Types",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/supported-BINS/types",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{base_url}}/api/v1/cards/supported-BINS/types"
+          }
+        }
+      ]
+    },
+    {
+      "name": "11 Catalog - Kenya Cities",
+      "item": [
+        {
+          "name": "GET /api/v1/cards/diagnostic/kenya-cities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/cards/diagnostic/kenya-cities"
+          }
+        }
+      ]
+    },
+    {
+      "name": "12 Catalog - Occupations",
+      "item": [
+        {
+          "name": "GET /api/v1/cards/occupations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/cards/occupations"
+          }
+        }
+      ]
+    },
+    {
+      "name": "13 KYC - Upload File",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/kyc/upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/cards/kyc/upload",
+            "description": "Upload JPG/PNG/PDF (max 2 MB). Save the returned file id for idFrontId/idBackId/idHoldId."
+          },
+          "body": {
+            "mode": "formdata",
+            "formdata": [
+              {
+                "key": "file",
+                "type": "file",
+                "src": []
+              },
+              {
+                "key": "kind",
+                "value": "front",
+                "type": "text",
+                "description": "front | back | selfie - which KYC slot this file fills"
+              }
+            ]
+          },
+          "description": "Upload JPG/PNG/PDF (max 2 MB). Set 'kind' to front, back or selfie. Upload all three before submitting the KYC - the journey tracker uses them to decide if you are ready to apply."
+        }
+      ]
+    },
+    {
+      "name": "14 Cardholder - Register (KYC Phase 1)",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/cardholder/register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardHolderModel\": \"B2C\",\n  \"cardTypeId\": 111078,\n  \"areaCode\": \"+254\",\n  \"mobile\": \"712345678\",\n  \"email\": \"user@example.com\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"birthday\": \"1990-01-01\",\n  \"nationality\": \"KE\",\n  \"country\": \"KE\",\n  \"town\": \"Nairobi\",\n  \"address\": \"1 Main St\",\n  \"postCode\": \"00100\",\n  \"gender\": \"F\",\n  \"idType\": \"DLN\",\n  \"idNumber\": \"12345678\",\n  \"issueDate\": \"2020-01-01\",\n  \"idNoExpiryDate\": \"2030-01-01\",\n  \"idFrontId\": \"file-id-front\",\n  \"idBackId\": \"file-id-back\",\n  \"idHoldId\": \"file-id-selfie\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/cardholder/register",
+            "description": "Register cardholder with full KYC. Returns holderId. Save as {{holder_id}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const data = json.data || {};",
+                  "  if (data.holderId) {",
+                  "    pm.collectionVariables.set('holder_id', String(data.holderId));",
+                  "    console.log('Holder ID saved:', data.holderId);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "15 Cardholder - Get Details",
+      "item": [
+        {
+          "name": "GET /api/v1/cards/cardholder/{holder_id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/cards/cardholder/{{holder_id}}?refresh=false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "16 Cardholder - List Mine",
+      "item": [
+        {
+          "name": "GET /api/v1/cards/cardholders",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/cards/cardholders"
+          }
+        }
+      ]
+    },
+    {
+      "name": "17 Cardholder - Update (Resubmit After Rejection)",
+      "item": [
+        {
+          "name": "PUT /api/v1/cards/cardholder/{holder_id}",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardHolderModel\": \"B2C\",\n  \"cardTypeId\": 111078,\n  \"areaCode\": \"+254\",\n  \"mobile\": \"712345678\",\n  \"email\": \"user@example.com\",\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"birthday\": \"1990-01-01\",\n  \"nationality\": \"KE\",\n  \"country\": \"KE\",\n  \"town\": \"Nairobi\",\n  \"address\": \"1 Main St\",\n  \"postCode\": \"00100\",\n  \"gender\": \"F\",\n  \"idType\": \"DLN\",\n  \"idNumber\": \"CORRECTED-ID-NUMBER\",\n  \"issueDate\": \"2020-01-01\",\n  \"idNoExpiryDate\": \"2030-01-01\",\n  \"idFrontId\": \"file-id-front\",\n  \"idBackId\": \"file-id-back\",\n  \"idHoldId\": \"file-id-selfie\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/cardholder/{{holder_id}}",
+            "description": "Wasabi v2 cardholder update. Only works when the holder status is 'reject' - correct the details and resubmit. Returns 409 otherwise."
+          }
+        }
+      ]
+    },
+    {
+      "name": "18 KYC - Submit Work Ticket",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/kyc/submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Activate my card\",\n  \"target\": \"card_activation\",\n  \"tradeType\": \"CARD_ACTIVE\",\n  \"content\": \"Please activate my virtual card after KYC approval.\",\n  \"cardNo\": \"\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/kyc/submit",
+            "description": "Escalation path when a cardholder is stuck in wait_audit. Creates a ticket in Wasabi's queue. You get a 'work' webhook with tradeStatus when it resolves."
+          }
+        }
+      ]
+    },
+    {
+      "name": "19 Card - Create (KYC Phase 2)",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardTypeId\": {{card_type_id}},\n  \"holderId\": {{holder_id}},\n  \"amount\": \"{{amount_usd}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/create",
+            "description": "Create and fund a virtual card. Requires an approved holder. Save cardNo as {{card_no}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  const data = json.data || {};",
+                  "  if (data.cardNo) {",
+                  "    pm.collectionVariables.set('card_no', data.cardNo);",
+                  "    console.log('Card No saved:', data.cardNo);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "20 Card - List My Cards",
+      "item": [
+        {
+          "name": "GET /api/v1/cards/list-BINS",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/cards/list-BINS?page=1&pageSize=10"
+          }
+        }
+      ]
+    },
+    {
+      "name": "21 Card - Info",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/info",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/info"
+          }
+        }
+      ]
+    },
+    {
+      "name": "22 Card - Balance",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/balance",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/balance"
+          }
+        }
+      ]
+    },
+    {
+      "name": "23 Card - Sensitive (Decrypted PAN/CVV)",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/sensitive",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/sensitive"
+          }
+        }
+      ]
+    },
+    {
+      "name": "24 Card - Freeze",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/freeze",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\",\n  \"clientRemark\": \"Freezing card for security review\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/freeze"
+          }
+        }
+      ]
+    },
+    {
+      "name": "25 Card - Unfreeze",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/unfreeze",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\",\n  \"clientRemark\": \"Unfreezing after review\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/unfreeze"
+          }
+        }
+      ]
+    },
+    {
+      "name": "26 Wallet - Balance",
+      "item": [
+        {
+          "name": "GET /api/v1/wallet",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/wallet"
+          }
+        }
+      ]
+    },
+    {
+      "name": "27 Wallet - M-Pesa Top-up",
+      "item": [
+        {
+          "name": "POST /api/v1/wallet/topup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"amountKes\": {{topup_amount}}\n}"
+            },
+            "url": "{{base_url}}/api/v1/wallet/topup",
+            "description": "Initiate Daraja STK Push. Save checkout_request_id as {{checkout_request_id}}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.checkout_request_id) {",
+                  "    pm.collectionVariables.set('checkout_request_id', json.checkout_request_id);",
+                  "    console.log('Checkout Request ID saved:', json.checkout_request_id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "28 Wallet - Check Top-up Status",
+      "item": [
+        {
+          "name": "GET /api/v1/wallet/topups/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/wallet/topups/{{checkout_request_id}}?refresh=true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "29 Wallet - Price Quote",
+      "item": [
+        {
+          "name": "GET /api/v1/wallet/quote",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/wallet/quote?usd={{amount_usd}}&kind=fund"
+          }
+        }
+      ]
+    },
+    {
+      "name": "30 Card - Deposit (Fund Card from Wallet)",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/deposit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\",\n  \"amount\": \"{{amount_usd}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/deposit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "31 Card - Withdraw (Pull Funds to Wallet)",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/withdraw",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\",\n  \"amount\": \"{{amount_usd}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/withdraw"
+          }
+        }
+      ]
+    },
+    {
+      "name": "32 Card - Cancel",
+      "item": [
+        {
+          "name": "POST /api/v1/cards/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotency_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNo\": \"{{card_no}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/cards/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "33 Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        }
+      ]
+    }
+  ]
+}

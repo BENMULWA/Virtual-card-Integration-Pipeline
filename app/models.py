@@ -1,121 +1,142 @@
 # =========================================================
-# schemas.py - Pydantic models (FIXED)
+# models.py - request schemas (match Wasabi V2 field names)
 # =========================================================
 
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional,List
-from datetime import datetime
+from datetime import date
+from decimal import Decimal
+from typing import List, Optional
 
-# =========================================================
-# USER
-# =========================================================
-class User(BaseModel):
-    user_id: str
-    full_name: str
-    email: str
-    phone_number: Optional[str] = None
-    is_active: bool = True
-    created_at: datetime = datetime.utcnow()
-    updated_at: datetime = datetime.utcnow()
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+
+from app.core.money import parse_amount
 
 
+class _Amount(BaseModel):
+    amount: Decimal = Field(gt=0)
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _check_amount(cls, v):
+        # Strings or ints only: JSON floats already lost precision before reaching us.
+        return parse_amount(v)
+
+
 # =========================================================
-# PHASE 1: CREATE CARDHOLDER REQUEST (Strictly Matches Wasabi Docs)
+# CARDHOLDER (B2C) - values come from the customer / server, never fabricated defaults
 # =========================================================
+class KycVerification(BaseModel):
+    provider: str = Field(..., description="SUMSUB, DIDIT, MYINFO, JUMIO, SHUFTI or REGTANK")
+    referenceId: str
+
+
 class CreateCardholderRequest(BaseModel):
-    cardHolderModel: str = "B2C"
+    # Derived from the card type's metadata when the client omits it (see cards/service.py).
+    cardHolderModel: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9_]{2,16}$")
     cardTypeId: int
-    areaCode: str = Field(..., description="Mobile phone area code. Length[2...5], e.g., '+254'")
-    mobile: str = Field(..., description="Mobile phone number without area code. Length[5...20]")
-    email: EmailStr = Field(..., description="Email address for verification codes")
-    firstName: str = Field(..., description="First Name (English characters only)")
-    lastName: str = Field(..., description="Last Name (English characters only)")
-    birthday: str = Field(..., description="Format: yyyy-MM-dd")
-    nationality: str = Field(..., description="Nationality Code (ISO 3166-1 alpha-2, e.g., 'KE')")
-    country: str = Field(..., description="Country Code for billing address (ISO 3166-1 alpha-2)")
-    town: str = Field(..., description="City/Town Code from City List Interface")
-    address: str = Field(..., description="Billing street address. Letters, numbers, hyphens, spaces only")
-    postCode: str = Field(..., description="Postal code for billing address")
-    gender: str = Field(..., description="M for male, F for female")
-    occupation: str = Field(..., description="Occupation code from interface parameters")
-    annualSalary: str = Field("50000 USD", description="Annual salary text schema format")
-    accountPurpose: str = Field("Living Expense", description="Only supports English text description")
-    expectedMonthlyVolume: str = Field("10000 USD", description="Expected monthly transaction volume")
-    idType: str = Field(..., description="PASSPORT, HK_HKID, DLN, or GOVERNMENT_ISSUED_ID_CARD")
-    idNumber: str = Field(..., description="Document number identifier")
-    issueDate: str = Field(..., description="ID document issuance date. Format: yyyy-MM-dd")
-    idNoExpiryDate: str = Field(..., description="ID document expiration date. Format: yyyy-MM-dd")
-    idFrontId: str = Field(..., description="Front photo File ID from upload interface")
-    idBackId: str = Field(..., description="Back photo File ID from upload interface")
-    idHoldId: str = Field(..., description="Face selfie photo File ID from upload interface")
-    ipAddress: str = Field("127.0.0.1", description="Client IPV4 address string")
-    
-    # Injected automatically by your helper inside routeendpoint.py
-    merchantOrderNo: Optional[str] = Field(default=None, min_length=20, max_length=40)
+    areaCode: str = Field(..., min_length=2, max_length=5, description="e.g. '+254'")
+    mobile: str = Field(..., min_length=5, max_length=20)
+    email: EmailStr
+    firstName: str = Field(..., min_length=2, max_length=32)
+    lastName: str = Field(..., min_length=2, max_length=32)
+    birthday: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    nationality: str = Field(..., min_length=2, max_length=2)
+    country: str = Field(..., min_length=2, max_length=2)
+    town: str = Field(..., min_length=2, max_length=40, pattern=r"^[A-Za-z][A-Za-z .'\-]*$")
+    address: str = Field(..., min_length=2, max_length=40, pattern=r"^[A-Za-z0-9\-,. /#]+$")
+    postCode: str = Field(..., min_length=3, max_length=15, pattern=r"^[A-Za-z0-9][A-Za-z0-9 \-]*$")
+    gender: str = Field(..., pattern=r"^[MF]$")
+    occupation: Optional[str] = None
+    annualSalary: Optional[str] = None
+    accountPurpose: Optional[str] = None
+    expectedMonthlyVolume: Optional[str] = None
+    idType: str = Field(..., pattern=r"^(PASSPORT|HK_HKID|DLN|GOVERNMENT_ISSUED_ID_CARD)$")
+    idNumber: str = Field(..., min_length=2, max_length=50)
+    issueDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    idNoExpiryDate: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    idFrontId: str
+    idBackId: Optional[str] = None
+    idHoldId: str
+    ssn: Optional[str] = Field(None, pattern=r"^\d{9}$", description="Required for U.S. nationals")
+    kycVerification: Optional[KycVerification] = None
+    # ipAddress and merchantOrderNo are set server-side, never accepted from the client.
+
+    @field_validator("firstName", "lastName", "town", "address", "postCode", "idNumber", mode="before")
+    @classmethod
+    def _trim(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
+    @field_validator("nationality", "country", mode="before")
+    @classmethod
+    def _upper_country(cls, v):
+        return v.strip().upper() if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def _wasabi_contract(self):
+        # Wasabi: firstName + lastName must not exceed 32 characters in total.
+        if len(self.firstName) + len(self.lastName) > 32:
+            raise ValueError("First name and last name together must be at most 32 characters")
+
+        if self.idType != "PASSPORT" and not self.idBackId:
+            raise ValueError("idBackId is required unless idType is PASSPORT")
+        if self.nationality == "US" and not self.ssn:
+            raise ValueError("ssn is required for U.S. nationals")
+
+        try:
+            birthday = date.fromisoformat(self.birthday)
+            issued = date.fromisoformat(self.issueDate)
+            expires = date.fromisoformat(self.idNoExpiryDate)
+        except ValueError as exc:
+            raise ValueError(f"Dates must be real calendar dates (YYYY-MM-DD): {exc}") from exc
+
+        today = date.today()
+        if birthday >= today:
+            raise ValueError("birthday must be in the past")
+        if issued > today:
+            raise ValueError("issueDate cannot be in the future")
+        if expires <= issued:
+            raise ValueError("idNoExpiryDate must be after issueDate")
+        return self
 
 
 # =========================================================
-# PHASE 2: CREATE CARD REQUEST (Strictly Matches Wasabi V2 Specs)
+# CARD
 # =========================================================
-class CreateCardRequest(BaseModel):
-    cardTypeId: int  # Identifies the target card BIN profile
-    holderId: int    # MANDATORY LONG ID returned from Phase 1 registration
-    amount: float = Field(gt=0)  # Must meet depositAmountMinQuotaForActiveCard (\$10)
-    
-    # Optional gateway modifiers
-    cardNumber: Optional[str] = None  # Required for physical card manufacturing tracking only
-    accountId: Optional[int] = None   # Explicit shared asset pool token parameter
-    designId: Optional[str] = None     # Brand indicator layout key for corporate white-label builds
+class CreateCardRequest(_Amount):
+    cardTypeId: int
+    holderId: Optional[int] = None  # required only when the card type has needCardHolder=true
+    designId: Optional[str] = None
 
-    # Injected automatically by your routes helper function
-    merchantOrderNo: Optional[str] = Field(default=None, min_length=15, max_length=65)
+
+class CardNoRequest(BaseModel):
+    cardNo: str = Field(..., min_length=1, max_length=64)
+    clientRemark: Optional[str] = Field(None, max_length=50, description="Optional client remark (0-50 chars)")
+
+
+class CardAmountRequest(_Amount):
+    cardNo: str = Field(..., min_length=1, max_length=64)
+    clientRemark: Optional[str] = Field(None, max_length=50, description="Optional client remark (0-50 chars)")
+
+
+class CardListQuery(BaseModel):
+    pageNum: int = 1
+    pageSize: int = Field(10, le=100)
 
 
 # =========================================================
-# SUPPORT MODELS
+# COMPLIANCE FOR KYC SUBMISSION (work ticket)
 # =========================================================
-class CardIdRequest(BaseModel):
-    cardId: str
-
-
-class CardAmountRequest(BaseModel):
-    cardId: str
-    amount: float = Field(gt=0)
-    merchantOrderNo: Optional[str] = Field(default=None, min_length=15, max_length=65)
-
-
-class Card(BaseModel):
-    card_id: str
-    user_id: str
-    currency: str
-    status: str = "active"
-    card_network: str
-    last_four_digits: str
-    expiration_date: datetime
-    is_active: bool = True
-
-
-class CardListRequest(BaseModel):
-    user_id: str
-    page: int = 1
-    page_size: int = 10
-
-
-class CardTransactionRequest(BaseModel):
-    card_id: str
-    amount: float = Field(gt=0)
-
-
-#=========================================================
-# COMPLIENCE FOR KYC SUBMISSION
-#=========================================================
-
 class KYCSubmissionRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255, description="Document title for KYC submission")
-    target: str = Field(..., min_length=1, max_length=255, description="Target entity for KYC document (e.g., 'cardholder', 'account')")
-    content: Optional[str] = Field(None, max_length=1000, description="Base64-encoded content for text-based KYC documents")
-    files: Optional[List[str]] = Field(None, description="List of File IDs for file-based KYC documents uploaded via Wasabi's file upload endpoint")
+    title: str = Field(..., min_length=1, max_length=255)
+    target: Optional[str] = Field(None, max_length=255)
+    content: Optional[str] = Field(None, max_length=1000)
+    files: Optional[List[str]] = None
     tradeType: str = Field("CARD_ACTIVE", description="CARD_ACTIVE or OTHER_TRADE_TYPE")
+    cardNo: Optional[str] = None
 
-    # Injected programmatically by the router layer to ensure traceability
-    merchantOrderNo: Optional[str] = Field(default=None, min_length=20, max_length=55)
+    @model_validator(mode="after")
+    def _card_required_for_card_ticket(self):
+        if self.tradeType == "CARD_ACTIVE" and not self.cardNo:
+            raise ValueError("cardNo is required when tradeType is CARD_ACTIVE")
+        if self.tradeType != "CARD_ACTIVE" and not self.target:
+            raise ValueError("target is required for non-card work orders")
+        return self
