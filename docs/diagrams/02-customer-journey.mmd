@@ -1,0 +1,16 @@
+%%{init: {"flowchart": {"wrappingWidth": 170, "nodeSpacing": 30, "rankSpacing": 45}}}%%
+flowchart TD
+    A["1. Register"] --> B["2. Verify email"]
+    B --> C["3. Upload ID front, back and selfie"]
+    C --> D["4. Submit identity details<br/>cardholder registration"]
+    D --> E{"5. Wasabi review"}
+    E -->|"approved: pass_audit"| F["6. Top up wallet and request card"]
+    E -->|"rejected"| G["Correct details and resubmit<br/>PUT cardholder"]
+    G --> E
+    E -->|"stuck"| H["Escalate with a work ticket"]
+    H --> E
+    F --> I{"Wallet covers the price?"}
+    I -->|"no"| J["Top up with mobile money"]
+    J --> I
+    I -->|"yes"| K["Card issued<br/>pending, then active"]
+    K --> L["7. Use and manage the card<br/>load, balance, freeze, details"]

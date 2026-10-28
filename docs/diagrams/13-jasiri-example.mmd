@@ -1,0 +1,26 @@
+%%{init: {"sequence": {"wrap": true, "width": 150, "messageMargin": 28, "diagramMarginX": 20}}}%%
+sequenceDiagram
+    actor U as Jasiri user
+    participant J as Jasiri backend
+    participant M as Mamlaka Partner API
+    participant W as WasabiCard
+
+    U->>J: Open Deposits then Virtual Card
+    J->>M: GET /quote, kind issue
+    M-->>J: Cost in KES
+    J->>J: Price = cost plus Jasiri margin, shown to the user
+    U->>J: Confirm with email code and authenticator code
+    J->>J: Debit the user's KES wallet first, keyed by the operation id
+    J->>M: POST cards, Idempotency-Key = operation id
+    alt refused
+        M-->>J: error
+        J->>J: Refund the wallet once
+    else timeout
+        Note over J: Keep the money held. Settle later by replaying the same key
+    else accepted
+        M->>W: createCard
+        W-->>M: success
+        M->>J: Signed event operation.updated
+        J->>J: Mark the charge complete, money stays spent
+    end
+    J-->>U: Card page with balance, Load, Details, Freeze

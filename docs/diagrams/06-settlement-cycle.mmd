@@ -1,0 +1,20 @@
+%%{init: {"sequence": {"wrap": true, "width": 150, "messageMargin": 28, "diagramMarginX": 20}}}%%
+sequenceDiagram
+    actor U as Reseller's customer
+    participant R as Reseller
+    participant M as Mamlaka Virtual Cards
+    participant W as WasabiCard
+    actor Ops as Mamlaka admin
+
+    U->>R: Pays KES to the reseller
+    R->>Ops: Reseller prepays Mamlaka (bank or M-Pesa), with a payment reference
+    Ops->>M: Credit float: credit-float slug amount reference
+    Note over M: The same reference twice is a no-op, so a repeat cannot double-credit
+    R->>M: Issue card for customer (Partner API)
+    M->>M: Hold cost from the float
+    M->>W: createCard
+    W-->>M: Success, Wasabi deducts load plus fee in USD
+    M->>M: Capture hold, float reduced
+    M-->>R: Event operation.updated SUCCESS
+    Ops->>W: Keep the Wasabi USD balance funded
+    M->>M: Treasury check compares Wasabi USD with all floats

@@ -36,51 +36,9 @@ The central design rule is that **money is held first, the provider is called on
 
 ## 3. System architecture
 
-```mermaid
-flowchart TB
-    subgraph CALL["Callers"]
-        CU["Customer web app"]
-        RS["Reseller servers: Comet, Jasiri"]
-    end
+![System architecture](docs/diagrams/01-architecture.png)
 
-    subgraph SVC["Mamlaka Virtual Cards service (FastAPI)"]
-        API["Customer API"]
-        PAPI["Partner API"]
-        ENG["Operation engine<br/>hold, call once, settle"]
-        LED["Ledger and wallets"]
-        HOOK["Webhook receivers"]
-        REC["Reconcile worker<br/>and treasury check"]
-        OUT["Reseller event outbox"]
-    end
-
-    DB[("MongoDB")]
-
-    subgraph EXT["External systems"]
-        WSB["WasabiCard API"]
-        GW["Mamlaka payments gateway"]
-        SAF["Safaricom Daraja"]
-        RWH["Reseller webhook endpoints"]
-    end
-
-    CU --> API
-    RS --> PAPI
-    API --> ENG
-    PAPI --> ENG
-    ENG --> LED
-    ENG --> DB
-    LED --> DB
-    ENG -->|"signed requests"| WSB
-    API -->|"STK push and payouts"| GW
-    API -.->|"optional"| SAF
-    REC --> ENG
-    REC -->|"read USD balance"| WSB
-    REC --> OUT
-    OUT -->|"signed events"| RWH
-    WSB -->|"webhooks"| HOOK
-    GW -->|"signed callbacks"| HOOK
-    SAF -->|"callback"| HOOK
-    HOOK --> ENG
-```
+*Diagram: System architecture. Click the image to enlarge. Editable source: [01-architecture.mmd](docs/diagrams/01-architecture.mmd).*
 
 | Component | Responsibility | Code |
 |---|---|---|
@@ -95,23 +53,9 @@ flowchart TB
 
 The customer-facing application tracks one ordered journey of seven steps, exposed at `GET /api/v1/journey` and streamed over Server-Sent Events.
 
-```mermaid
-flowchart TD
-    A["1. Register"] --> B["2. Verify email"]
-    B --> C["3. Upload ID front, back and selfie"]
-    C --> D["4. Submit identity details<br/>cardholder registration"]
-    D --> E{"5. Wasabi review"}
-    E -->|"approved: pass_audit"| F["6. Top up wallet and request card"]
-    E -->|"rejected"| G["Correct details and resubmit<br/>PUT cardholder"]
-    G --> E
-    E -->|"stuck"| H["Escalate with a work ticket"]
-    H --> E
-    F --> I{"Wallet covers the price?"}
-    I -->|"no"| J["Top up with mobile money"]
-    J --> I
-    I -->|"yes"| K["Card issued<br/>pending, then active"]
-    K --> L["7. Use and manage the card<br/>load, balance, freeze, details"]
-```
+![Customer journey](docs/diagrams/02-customer-journey.png)
+
+*Diagram: Customer journey. Click the image to enlarge. Editable source: [02-customer-journey.mmd](docs/diagrams/02-customer-journey.mmd).*
 
 Wasabi's cardholder statuses are `wait_audit`, `under_review`, `pass_audit` (approved) and `reject`. Approval is Wasabi's decision: Mamlaka can only observe it, escalate, or help the customer resubmit. KYC is **once per person**: an approved cardholder can hold several cards.
 
@@ -121,21 +65,9 @@ Rules that cause most rejections: names, ID number and the **date of issue must 
 
 Every action that touches Wasabi (create holder, create card, deposit, withdraw, freeze, cancel) follows one lifecycle.
 
-```mermaid
-stateDiagram-v2
-    [*] --> INITIATED: intent recorded, funds held
-    INITIATED --> PENDING: Wasabi accepted
-    INITIATED --> SUCCESS: Wasabi finished at once
-    INITIATED --> FAILED: Wasabi refused
-    INITIATED --> UNKNOWN: timeout or server error
-    UNKNOWN --> PENDING: read back, still processing
-    UNKNOWN --> SUCCESS: read back, done
-    UNKNOWN --> FAILED: read back, refused
-    PENDING --> SUCCESS: webhook or reconcile
-    PENDING --> FAILED: webhook or reconcile
-    SUCCESS --> [*]: hold captured, money spent
-    FAILED --> [*]: hold released, money returned
-```
+![Operation lifecycle states](docs/diagrams/03-operation-lifecycle.png)
+
+*Diagram: Operation lifecycle states. Click the image to enlarge. Editable source: [03-operation-lifecycle.mmd](docs/diagrams/03-operation-lifecycle.mmd).*
 
 How funds behave in each state:
 
@@ -154,39 +86,9 @@ Guarantees:
 
 ### 5.1 Issuing a card (customer paying from the wallet)
 
-```mermaid
-sequenceDiagram
-    actor C as Customer
-    participant A as Mamlaka API
-    participant L as Ledger
-    participant W as WasabiCard
-    participant R as Reconcile worker
+![Issuing a card from the wallet](docs/diagrams/04-card-issuance-sequence.png)
 
-    C->>A: Create card, with Idempotency-Key
-    A->>A: Check ownership, holder approved, card type allowed
-    A->>A: Treasury pre-flight, Wasabi USD covers it
-    A->>L: Hold KES price from the wallet
-    alt insufficient balance
-        L-->>A: refused
-        A-->>C: 402 top up first
-    else held
-        A->>W: Signed createCard
-        alt Wasabi refuses
-            W-->>A: error
-            A->>L: Release hold
-            A-->>C: Failed, wallet unchanged
-        else accepted
-            W-->>A: wait_process
-            A-->>C: Processing
-            W->>A: Webhook, card transaction
-            A->>W: Read the authoritative state
-            A->>L: Capture hold, card active
-            A-->>C: Card ready
-        end
-    end
-    R->>W: If no webhook arrived, read the state
-    R->>L: Capture or release
-```
+*Diagram: Issuing a card from the wallet. Click the image to enlarge. Editable source: [04-card-issuance-sequence.mmd](docs/diagrams/04-card-issuance-sequence.mmd).*
 
 ## 6. Money, ledgers and settlement
 
@@ -194,27 +96,9 @@ sequenceDiagram
 
 The most important thing to understand is that **three different pools of money exist**, owned by different parties.
 
-```mermaid
-flowchart TB
-    subgraph P1["Pool 1: customer money"]
-        CW["Customer wallet<br/>KES ledger in this service"]
-    end
-    subgraph P2["Pool 2: reseller prepayment"]
-        FL["Reseller float<br/>KES ledger, credited by an admin"]
-    end
-    subgraph P3["Pool 3: real USD"]
-        WB["Wasabi merchant balance<br/>USD, held by Wasabi"]
-    end
+![The three balances](docs/diagrams/05-three-balances.png)
 
-    MM["Mobile money<br/>M-Pesa, Airtel"] -->|"top-up credits"| CW
-    CW -->|"card operation: hold then capture"| OP["Card operation"]
-    RP["Reseller pays Mamlaka<br/>bank or M-Pesa"] -->|"admin credits with a reference"| FL
-    FL -->|"partner card operation: hold then capture"| OP
-    OP -->|"Wasabi deducts load plus card fee"| WB
-    FU["Mamlaka funds Wasabi<br/>crypto deposit"] --> WB
-    WB --> TR{"Treasury check<br/>real USD covers floats?"}
-    FL --> TR
-```
+*Diagram: The three balances. Click the image to enlarge. Editable source: [05-three-balances.mmd](docs/diagrams/05-three-balances.mmd).*
 
 - A **customer wallet** holds KES the customer has paid in. It is a ledger number backed by money in the payments gateway account.
 - A **reseller float** is a ledger number that says "this reseller has prepaid Mamlaka this much". It is **not cash**: it is only a promise unless real USD backs it.
@@ -222,60 +106,25 @@ flowchart TB
 
 ### 6.2 Settlement cycle with a reseller
 
-```mermaid
-sequenceDiagram
-    actor U as Reseller's customer
-    participant R as Reseller
-    participant M as Mamlaka Virtual Cards
-    participant W as WasabiCard
-    actor Ops as Mamlaka admin
+![Settlement cycle with a reseller](docs/diagrams/06-settlement-cycle.png)
 
-    U->>R: Pays KES to the reseller
-    R->>Ops: Reseller prepays Mamlaka (bank or M-Pesa), with a payment reference
-    Ops->>M: Credit float: credit-float slug amount reference
-    Note over M: The same reference twice is a no-op, so a repeat cannot double-credit
-    R->>M: Issue card for customer (Partner API)
-    M->>M: Hold cost from the float
-    M->>W: createCard
-    W-->>M: Success, Wasabi deducts load plus fee in USD
-    M->>M: Capture hold, float reduced
-    M-->>R: Event operation.updated SUCCESS
-    Ops->>W: Keep the Wasabi USD balance funded
-    M->>M: Treasury check compares Wasabi USD with all floats
-```
+*Diagram: Settlement cycle with a reseller. Click the image to enlarge. Editable source: [06-settlement-cycle.mmd](docs/diagrams/06-settlement-cycle.mmd).*
 
 ### 6.3 Pricing
 
 A card operation has a **cost**, set by Mamlaka from the live Wasabi catalog: the opening load plus the card fee, converted from USD to KES at the configured rate (`FX_KES_PER_USD`). A reseller prices its own customer from that cost.
 
-```mermaid
-flowchart LR
-    Q["Reseller asks GET /quote<br/>kind, amount, cardTypeId"] --> COST["Mamlaka cost in KES<br/>(load + card fee) x rate"]
-    COST --> MARGIN["Reseller adds its own margin<br/>e.g. 2 percent"]
-    MARGIN --> CHG["Charge to the reseller's customer"]
-    COST -.->|"debited from the reseller float"| FLT["Float"]
-    CHG -.->|"collected by the reseller"| REV["Reseller revenue"]
-```
+![Pricing: cost, margin and charge](docs/diagrams/07-pricing.png)
+
+*Diagram: Pricing: cost, margin and charge. Click the image to enlarge. Editable source: [07-pricing.mmd](docs/diagrams/07-pricing.mmd).*
 
 Worked example (rate 129.50, a $10 card with a $2 card fee): cost = (10 + 2) x 129.50 = **KES 1,554.00** from the float. With a 2 percent margin the reseller charges its customer **KES 1,585.08** and keeps KES 31.08. Quoting from Mamlaka's own cost means a rate change on Mamlaka's side can never leave the reseller out of pocket.
 
 ### 6.4 Treasury: keeping the pools honest
 
-```mermaid
-flowchart TD
-    S["Every 15 minutes, or on demand"] --> R["Read Wasabi available USD"]
-    R --> K{"Readable?"}
-    K -->|"no"| U["Unknown: keep the last status, never alert, never block"]
-    K -->|"yes"| F["Sum all reseller floats in KES<br/>convert to USD at the rate"]
-    F --> A{"Wasabi USD below floats?"}
-    A -->|"yes"| UF["UNDERFUNDED<br/>prepaid more than we hold"]
-    A -->|"no"| B{"Below the alert threshold?"}
-    B -->|"yes"| LO["LOW"]
-    B -->|"no"| OK["OK"]
-    UF --> AL["Alert: now, then every 6 hours"]
-    LO --> AL
-    OK --> RC["If it was bad, alert once: recovered"]
-```
+![Treasury check](docs/diagrams/08-treasury-check.png)
+
+*Diagram: Treasury check. Click the image to enlarge. Editable source: [08-treasury-check.mmd](docs/diagrams/08-treasury-check.mmd).*
 
 The same check runs as a **pre-flight** on every issuance and card deposit: if the real Wasabi balance cannot cover the request (plus a configured reserve), it is refused cleanly before anything is held, and the caller is told only that the service is temporarily unavailable. If Wasabi cannot be asked, requests are not blocked: Wasabi's own refusal is still handled and refunded.
 
@@ -283,28 +132,9 @@ The same check runs as a **pre-flight** on every issuance and card deposit: if t
 
 Customers fund the KES wallet through the Mamlaka payments gateway (M-Pesa and Airtel) or, optionally, direct Safaricom Daraja. The wallet is credited only after the provider confirms payment **and** the confirmed amount equals the amount requested.
 
-```mermaid
-sequenceDiagram
-    actor C as Customer
-    participant A as Mamlaka API
-    participant G as Payments gateway
-    participant P as Customer's phone
-    participant L as Ledger
-    participant R as Reconcile worker
+![Top-up through the payments gateway](docs/diagrams/09-top-up-sequence.png)
 
-    C->>A: Top up, phone and amount, with Idempotency-Key
-    A->>A: Record the top-up as PENDING
-    A->>G: Collect, externalId and callbackUrl
-    G->>P: STK prompt
-    P-->>G: Customer approves with a PIN
-    G->>A: Signed callback, X-Mamlaka-Signature
-    A->>A: Verify HMAC over the raw body, reject if it fails
-    A->>A: Check reference and amount match the request
-    A->>L: Credit the wallet once, unique entry key
-    A-->>C: Wallet credited
-    R->>G: If no callback arrived, ask the gateway for the status
-    R->>L: Credit once, same entry key, so no double credit
-```
+*Diagram: Top-up through the payments gateway. Click the image to enlarge. Editable source: [09-top-up-sequence.mmd](docs/diagrams/09-top-up-sequence.mmd).*
 
 Withdrawals to a phone follow the same lifecycle as card operations: the KES is **held first**, the gateway is called once, a confirmed payout captures the hold, a failure releases it, and an unknown outcome keeps it held. Withdrawals can only go to the phone number registered on the account and are off by default (`WALLET_WITHDRAW_ENABLED`), because they move real money out.
 
@@ -314,110 +144,33 @@ A reseller is a **tenant**. Its customers are stored as `<tenant_id>:<externalId
 
 ### 8.1 Onboarding a reseller
 
-```mermaid
-sequenceDiagram
-    actor Ops as Mamlaka admin
-    participant S as Admin script
-    participant DB as MongoDB
-    actor R as Reseller developer
+![Onboarding a reseller](docs/diagrams/10-partner-onboarding.png)
 
-    Ops->>S: create-tenant name, slug, webhook URL
-    S->>DB: Store tenant with SHA-256 hash of the API key
-    S-->>Ops: API key and webhook secret, shown once
-    Ops->>R: Send both over a private channel, with the integration guide
-    Ops->>S: credit-float slug, amount, payment reference
-    S->>DB: Ledger credit, idempotent on the reference
-    R->>S: Webhook URL provided later
-    Ops->>S: set-webhook slug, url
-    R->>DB: First call GET /balance with X-API-Key
-    Note over R,DB: 200 and the float balance means authorization works
-```
+*Diagram: Onboarding a reseller. Click the image to enlarge. Editable source: [10-partner-onboarding.mmd](docs/diagrams/10-partner-onboarding.mmd).*
 
 The API key is a 256-bit random value, shown once and stored only as a hash. A lost or leaked key is replaced with `rotate-key`; the old key stops working immediately.
 
 ### 8.2 A reseller's customer, end to end
 
-```mermaid
-sequenceDiagram
-    actor U as Reseller's customer
-    participant R as Reseller server
-    participant P as Partner API
-    participant W as WasabiCard
+![A reseller's customer, end to end](docs/diagrams/11-partner-customer-journey.png)
 
-    R->>P: POST /customers, externalId, name, email, phone
-    R->>P: POST /customers/id/kyc/documents, front, back, selfie
-    P->>W: Upload files, returns file ids
-    R->>P: POST /customers/id/kyc, details and file ids
-    P->>W: Register cardholder
-    W-->>P: holderId, status wait_audit
-    Note over W: Wasabi reviews, usually a few hours
-    W->>P: Webhook, holder status changed
-    P->>W: Read the authoritative status
-    P->>R: Signed event kyc.status_changed
-    alt rejected
-        R->>P: PUT /customers/id/kyc/holderId, corrected details
-    else approved
-        R->>P: GET /quote, kind issue
-        R->>P: POST /customers/id/cards, amount, Idempotency-Key
-        P->>P: Hold the cost from the reseller float
-        P->>W: createCard
-        W->>P: Webhook, card transaction
-        P->>R: Signed event operation.updated SUCCESS
-        R-->>U: Card ready
-        R->>P: POST /customers/id/cards/details, after re-authenticating the user
-        P-->>R: Number, expiry, CVV, never stored or logged
-    end
-```
+*Diagram: A reseller's customer, end to end. Click the image to enlarge. Editable source: [11-partner-customer-journey.mmd](docs/diagrams/11-partner-customer-journey.mmd).*
 
 ### 8.3 Events sent to a reseller
 
 Events are stored first, then delivered, so a reseller that is briefly down still receives everything. Delivery is **at least once**: a reseller must ignore repeats using the event `id`.
 
-```mermaid
-flowchart TD
-    E["Event created<br/>kyc.status_changed, card.updated, operation.updated"] --> ST["Stored as PENDING"]
-    ST --> SD["POST to the reseller webhook URL<br/>header X-Mamlaka-Signature, HMAC-SHA256 of the body"]
-    SD --> Q{"2xx answer?"}
-    Q -->|"yes"| DONE["DELIVERED"]
-    Q -->|"no"| N{"Attempts left?"}
-    N -->|"yes"| BO["Wait: 1 min, 5 min, 30 min, 2 h, 6 h, then daily"]
-    BO --> SD
-    N -->|"no"| FAIL["FAILED, logged for an operator"]
-    ST --> NU{"No webhook URL set?"}
-    NU -->|"yes"| SK["SKIPPED, not retried"]
-```
+![Delivery of events to a reseller](docs/diagrams/12-reseller-events.png)
+
+*Diagram: Delivery of events to a reseller. Click the image to enlarge. Editable source: [12-reseller-events.mmd](docs/diagrams/12-reseller-events.mmd).*
 
 ### 8.4 A worked example: Jasiri
 
 Jasiri is a retail app that adds virtual cards as a funding channel under **Deposits**. It is a reseller that also keeps its own customer wallets.
 
-```mermaid
-sequenceDiagram
-    actor U as Jasiri user
-    participant J as Jasiri backend
-    participant M as Mamlaka Partner API
-    participant W as WasabiCard
+![Worked example: Jasiri](docs/diagrams/13-jasiri-example.png)
 
-    U->>J: Open Deposits then Virtual Card
-    J->>M: GET /quote, kind issue
-    M-->>J: Cost in KES
-    J->>J: Price = cost plus Jasiri margin, shown to the user
-    U->>J: Confirm with email code and authenticator code
-    J->>J: Debit the user's KES wallet first, keyed by the operation id
-    J->>M: POST cards, Idempotency-Key = operation id
-    alt refused
-        M-->>J: error
-        J->>J: Refund the wallet once
-    else timeout
-        Note over J: Keep the money held. Settle later by replaying the same key
-    else accepted
-        M->>W: createCard
-        W-->>M: success
-        M->>J: Signed event operation.updated
-        J->>J: Mark the charge complete, money stays spent
-    end
-    J-->>U: Card page with balance, Load, Details, Freeze
-```
+*Diagram: Worked example: Jasiri. Click the image to enlarge. Editable source: [13-jasiri-example.mmd](docs/diagrams/13-jasiri-example.mmd).*
 
 Jasiri's wallet debit is its own money rule: Jasiri charges the user first, calls Mamlaka with the operation id as the idempotency key, and refunds exactly once on a definitive refusal.
 
@@ -427,16 +180,9 @@ Jasiri's wallet debit is its own money rule: Jasiri charges the user first, call
 
 The reconcile worker covers everything a webhook missed. Wasabi stops retrying a webhook after about 37 hours, so the worker must always run.
 
-```mermaid
-flowchart TD
-    T["Every 3 minutes"] --> O1["1. Wasabi operations still in flight<br/>read back and settle"]
-    O1 --> O2["2. Finished operations whose wallet effect<br/>was never applied: apply it"]
-    O2 --> O3["3. Top-ups with no callback<br/>ask the provider, credit once"]
-    O3 --> O4["4. Withdrawals with no callback<br/>ask the gateway, capture or release"]
-    O4 --> O5["5. Reseller KYC still in review<br/>announce changes, retry undelivered events"]
-    O5 --> O6["6. Treasury check<br/>throttled to 15 minutes"]
-    O6 --> O7["7. Every wallet counter equals its ledger?<br/>log LEDGER MISMATCH if not"]
-```
+![Reconcile worker passes](docs/diagrams/14-reconcile-passes.png)
+
+*Diagram: Reconcile worker passes. Click the image to enlarge. Editable source: [14-reconcile-passes.mmd](docs/diagrams/14-reconcile-passes.mmd).*
 
 ## 10. Security model
 

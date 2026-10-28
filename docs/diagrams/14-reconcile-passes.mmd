@@ -1,0 +1,9 @@
+%%{init: {"flowchart": {"wrappingWidth": 170, "nodeSpacing": 30, "rankSpacing": 45}}}%%
+flowchart TD
+    T["Every 3 minutes"] --> O1["1. Wasabi operations still in flight<br/>read back and settle"]
+    O1 --> O2["2. Finished operations whose wallet effect<br/>was never applied: apply it"]
+    O2 --> O3["3. Top-ups with no callback<br/>ask the provider, credit once"]
+    O3 --> O4["4. Withdrawals with no callback<br/>ask the gateway, capture or release"]
+    O4 --> O5["5. Reseller KYC still in review<br/>announce changes, retry undelivered events"]
+    O5 --> O6["6. Treasury check<br/>throttled to 15 minutes"]
+    O6 --> O7["7. Every wallet counter equals its ledger?<br/>log LEDGER MISMATCH if not"]

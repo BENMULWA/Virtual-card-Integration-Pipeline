@@ -1,0 +1,17 @@
+%%{init: {"sequence": {"wrap": true, "width": 150, "messageMargin": 28, "diagramMarginX": 20}}}%%
+sequenceDiagram
+    actor Ops as Mamlaka admin
+    participant S as Admin script
+    participant DB as MongoDB
+    actor R as Reseller developer
+
+    Ops->>S: create-tenant name, slug, webhook URL
+    S->>DB: Store tenant with SHA-256 hash of the API key
+    S-->>Ops: API key and webhook secret, shown once
+    Ops->>R: Send both over a private channel, with the integration guide
+    Ops->>S: credit-float slug, amount, payment reference
+    S->>DB: Ledger credit, idempotent on the reference
+    R->>S: Webhook URL provided later
+    Ops->>S: set-webhook slug, url
+    R->>DB: First call GET /balance with X-API-Key
+    Note over R,DB: 200 and the float balance means authorization works

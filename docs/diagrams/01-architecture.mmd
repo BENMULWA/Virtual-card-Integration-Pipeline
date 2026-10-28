@@ -1,0 +1,17 @@
+%%{init: {"flowchart": {"wrappingWidth": 190, "nodeSpacing": 40, "rankSpacing": 55}}}%%
+flowchart TB
+    CU["Customer web app"] --> API["Customer API"]
+    RS["Reseller servers<br/>Comet, Jasiri"] --> PAPI["Partner API"]
+    API --> ENG["Operation engine<br/>hold, call once, settle"]
+    PAPI --> ENG
+    ENG --> LED["Ledger and wallets"]
+    LED --> DB[("MongoDB")]
+    ENG -->|"signed requests"| WSB["WasabiCard API"]
+    API -->|"STK push, payouts"| GW["Mamlaka payments gateway"]
+    WSB -.->|"webhooks"| HOOK["Webhook receivers"]
+    GW -.->|"signed callbacks"| HOOK
+    HOOK --> ENG
+    REC["Reconcile worker<br/>and treasury check"] --> ENG
+    REC -->|"read USD balance"| WSB
+    REC --> OUT["Reseller event outbox"]
+    OUT -->|"signed events"| RWH["Reseller webhook endpoints"]

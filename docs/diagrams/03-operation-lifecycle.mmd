@@ -1,0 +1,13 @@
+stateDiagram-v2
+    [*] --> INITIATED: intent recorded, funds held
+    INITIATED --> PENDING: Wasabi accepted
+    INITIATED --> SUCCESS: Wasabi finished at once
+    INITIATED --> FAILED: Wasabi refused
+    INITIATED --> UNKNOWN: timeout or server error
+    UNKNOWN --> PENDING: read back, still processing
+    UNKNOWN --> SUCCESS: read back, done
+    UNKNOWN --> FAILED: read back, refused
+    PENDING --> SUCCESS: webhook or reconcile
+    PENDING --> FAILED: webhook or reconcile
+    SUCCESS --> [*]: hold captured, money spent
+    FAILED --> [*]: hold released, money returned

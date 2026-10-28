@@ -1,0 +1,21 @@
+%%{init: {"sequence": {"wrap": true, "width": 150, "messageMargin": 28, "diagramMarginX": 20}}}%%
+sequenceDiagram
+    actor C as Customer
+    participant A as Mamlaka API
+    participant G as Payments gateway
+    participant P as Customer's phone
+    participant L as Ledger
+    participant R as Reconcile worker
+
+    C->>A: Top up, phone and amount, with Idempotency-Key
+    A->>A: Record the top-up as PENDING
+    A->>G: Collect, externalId and callbackUrl
+    G->>P: STK prompt
+    P-->>G: Customer approves with a PIN
+    G->>A: Signed callback, X-Mamlaka-Signature
+    A->>A: Verify HMAC over the raw body, reject if it fails
+    A->>A: Check reference and amount match the request
+    A->>L: Credit the wallet once, unique entry key
+    A-->>C: Wallet credited
+    R->>G: If no callback arrived, ask the gateway for the status
+    R->>L: Credit once, same entry key, so no double credit

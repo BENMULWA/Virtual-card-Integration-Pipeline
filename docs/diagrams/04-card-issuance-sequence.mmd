@@ -1,0 +1,32 @@
+%%{init: {"sequence": {"wrap": true, "width": 150, "messageMargin": 28, "diagramMarginX": 20}}}%%
+sequenceDiagram
+    actor C as Customer
+    participant A as Mamlaka API
+    participant L as Ledger
+    participant W as WasabiCard
+    participant R as Reconcile worker
+
+    C->>A: Create card, with Idempotency-Key
+    A->>A: Check ownership, holder approved, card type allowed
+    A->>A: Treasury pre-flight, Wasabi USD covers it
+    A->>L: Hold KES price from the wallet
+    alt insufficient balance
+        L-->>A: refused
+        A-->>C: 402 top up first
+    else held
+        A->>W: Signed createCard
+        alt Wasabi refuses
+            W-->>A: error
+            A->>L: Release hold
+            A-->>C: Failed, wallet unchanged
+        else accepted
+            W-->>A: wait_process
+            A-->>C: Processing
+            W->>A: Webhook, card transaction
+            A->>W: Read the authoritative state
+            A->>L: Capture hold, card active
+            A-->>C: Card ready
+        end
+    end
+    R->>W: If no webhook arrived, read the state
+    R->>L: Capture or release

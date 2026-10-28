@@ -1,0 +1,14 @@
+%%{init: {"flowchart": {"wrappingWidth": 170, "nodeSpacing": 30, "rankSpacing": 45}}}%%
+flowchart TD
+    S["Every 15 minutes, or on demand"] --> R["Read Wasabi available USD"]
+    R --> K{"Readable?"}
+    K -->|"no"| U["Unknown: keep the last status, never alert, never block"]
+    K -->|"yes"| F["Sum all reseller floats in KES<br/>convert to USD at the rate"]
+    F --> A{"Wasabi USD below floats?"}
+    A -->|"yes"| UF["UNDERFUNDED<br/>prepaid more than we hold"]
+    A -->|"no"| B{"Below the alert threshold?"}
+    B -->|"yes"| LO["LOW"]
+    B -->|"no"| OK["OK"]
+    UF --> AL["Alert: now, then every 6 hours"]
+    LO --> AL
+    OK --> RC["If it was bad, alert once: recovered"]

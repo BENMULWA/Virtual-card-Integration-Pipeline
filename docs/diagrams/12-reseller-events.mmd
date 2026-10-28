@@ -1,0 +1,12 @@
+%%{init: {"flowchart": {"wrappingWidth": 170, "nodeSpacing": 30, "rankSpacing": 45}}}%%
+flowchart TD
+    E["Event created<br/>kyc.status_changed, card.updated, operation.updated"] --> ST["Stored as PENDING"]
+    ST --> SD["POST to the reseller webhook URL<br/>header X-Mamlaka-Signature, HMAC-SHA256 of the body"]
+    SD --> Q{"2xx answer?"}
+    Q -->|"yes"| DONE["DELIVERED"]
+    Q -->|"no"| N{"Attempts left?"}
+    N -->|"yes"| BO["Wait: 1 min, 5 min, 30 min, 2 h, 6 h, then daily"]
+    BO --> SD
+    N -->|"no"| FAIL["FAILED, logged for an operator"]
+    ST --> NU{"No webhook URL set?"}
+    NU -->|"yes"| SK["SKIPPED, not retried"]

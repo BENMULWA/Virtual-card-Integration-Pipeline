@@ -1,0 +1,7 @@
+%%{init: {"flowchart": {"wrappingWidth": 170, "nodeSpacing": 30, "rankSpacing": 45}}}%%
+flowchart TB
+    Q["Reseller asks GET /quote<br/>kind, amount, cardTypeId"] --> COST["Mamlaka cost in KES<br/>(load + card fee) x rate"]
+    COST --> MARGIN["Reseller adds its own margin<br/>e.g. 2 percent"]
+    MARGIN --> CHG["Charge to the reseller's customer"]
+    COST -.->|"debited from the reseller float"| FLT["Float"]
+    CHG -.->|"collected by the reseller"| REV["Reseller revenue"]

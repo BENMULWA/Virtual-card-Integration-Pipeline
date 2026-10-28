@@ -1,0 +1,20 @@
+%%{init: {"flowchart": {"wrappingWidth": 170, "nodeSpacing": 30, "rankSpacing": 45}}}%%
+flowchart TB
+    subgraph P1["Pool 1: customer money"]
+        CW["Customer wallet<br/>KES ledger in this service"]
+    end
+    subgraph P2["Pool 2: reseller prepayment"]
+        FL["Reseller float<br/>KES ledger, credited by an admin"]
+    end
+    subgraph P3["Pool 3: real USD"]
+        WB["Wasabi merchant balance<br/>USD, held by Wasabi"]
+    end
+
+    MM["Mobile money<br/>M-Pesa, Airtel"] -->|"top-up credits"| CW
+    CW -->|"card operation: hold then capture"| OP["Card operation"]
+    RP["Reseller pays Mamlaka<br/>bank or M-Pesa"] -->|"admin credits with a reference"| FL
+    FL -->|"partner card operation: hold then capture"| OP
+    OP -->|"Wasabi deducts load plus card fee"| WB
+    FU["Mamlaka funds Wasabi<br/>crypto deposit"] --> WB
+    WB --> TR{"Treasury check<br/>real USD covers floats?"}
+    FL --> TR

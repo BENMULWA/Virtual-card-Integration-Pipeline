@@ -1,0 +1,30 @@
+%%{init: {"sequence": {"wrap": true, "width": 150, "messageMargin": 28, "diagramMarginX": 20}}}%%
+sequenceDiagram
+    actor U as Reseller's customer
+    participant R as Reseller server
+    participant P as Partner API
+    participant W as WasabiCard
+
+    R->>P: POST /customers, externalId, name, email, phone
+    R->>P: POST /customers/id/kyc/documents, front, back, selfie
+    P->>W: Upload files, returns file ids
+    R->>P: POST /customers/id/kyc, details and file ids
+    P->>W: Register cardholder
+    W-->>P: holderId, status wait_audit
+    Note over W: Wasabi reviews, usually a few hours
+    W->>P: Webhook, holder status changed
+    P->>W: Read the authoritative status
+    P->>R: Signed event kyc.status_changed
+    alt rejected
+        R->>P: PUT /customers/id/kyc/holderId, corrected details
+    else approved
+        R->>P: GET /quote, kind issue
+        R->>P: POST /customers/id/cards, amount, Idempotency-Key
+        P->>P: Hold the cost from the reseller float
+        P->>W: createCard
+        W->>P: Webhook, card transaction
+        P->>R: Signed event operation.updated SUCCESS
+        R-->>U: Card ready
+        R->>P: POST /customers/id/cards/details, after re-authenticating the user
+        P-->>R: Number, expiry, CVV, never stored or logged
+    end
