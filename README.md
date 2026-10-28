@@ -1,225 +1,148 @@
-# 💳 Mamlaka Virtual Cards Integration Service
+# Mamlaka Virtual Cards
 
-An advanced, containerised FastAPI proxy infrastructure orchestrating corporate-level card issuance, wallet ledgers, and compliance screening workflows with the **WasabiCard Gateway API Stack (V2)**.
+A FastAPI service that issues and manages **virtual Mastercards** through the WasabiCard API, for two kinds of callers:
 
----
+- **Customers** of Mamlaka's own app: sign up, complete KYC, top up a KES wallet (M-Pesa), get a card.
+- **Resellers** (businesses such as Comet and Jasiri): the **Partner API** lets them offer cards to *their* customers, paid from a prepaid float.
 
-## 👤 The Customer Journey (end to end)
+Cards are issued by Wasabi's issuing bank. This service handles KYC submission, wallets and ledgers, pricing, settlement, webhooks and reconciliation.
 
-A customer applies for a virtual card in **seven steps**. The API exposes the whole
-journey as one ordered list, and pushes live updates as the application progresses -
-the frontend never has to guess what state the application is in.
-
-| # | Step | Customer does | API |
-|---|------|---------------|-----|
-| 1 | `ACCOUNT` | Registers with email, phone and password | `POST /api/v1/users/register` |
-| 2 | `VERIFY_EMAIL` | Clicks the link we email | `POST /api/v1/users/verify-email` |
-| 3 | `KYC_DOCUMENTS` | Uploads ID front, ID back and a selfie | `POST /api/v1/cards/kyc/upload` (×3) |
-| 4 | `KYC_SUBMISSION` | Submits their identity details to Wasabi | `POST /api/v1/cards/cardholder/register` |
-| 5 | `KYC_REVIEW` | Waits - **Wasabi's compliance team approves**, not us | *(webhook / polling)* |
-| 6 | `CARD_ISSUANCE` | Requests the card; we issue and load it | `POST /api/v1/cards/create` |
-| 7 | `FUNDING` | Tops up with M-Pesa, then deposits onto the card | `POST /api/v1/wallet/topup` → `POST /api/v1/cards/deposit` |
-
-### Reading the journey
-
-```http
-GET /api/v1/journey
-Authorization: Bearer <token>
-```
-
-```json
-{
-  "currentStep": "KYC_REVIEW",
-  "currentTitle": "Wait for approval",
-  "nextAction": "POST /api/v1/cards/kyc/submit  (only if the review is stuck)",
-  "progress": 57,
-  "completedSteps": 4,
-  "totalSteps": 7,
-  "summary": "Your KYC is with Wasabi's compliance team. We will notify you when it is approved.",
-  "steps": [
-    { "key": "ACCOUNT",        "status": "completed",   "title": "Create your account", ... },
-    { "key": "VERIFY_EMAIL",   "status": "completed",   "title": "Verify your email", ... },
-    { "key": "KYC_DOCUMENTS",  "status": "completed",   "title": "Upload your ID documents", ... },
-    { "key": "KYC_SUBMISSION", "status": "completed",   "title": "Submit your KYC details", ... },
-    { "key": "KYC_REVIEW",     "status": "in_progress", "title": "Wait for approval", ... },
-    { "key": "CARD_ISSUANCE",  "status": "pending",     "title": "Get your virtual card", ... },
-    { "key": "FUNDING",        "status": "pending",     "title": "Fund your card", ... }
-  ],
-  "holder": { "holderId": 124024, "status": "wait_audit", "statusFlowLocation": "admin" },
-  "card": null,
-  "funded": false
-}
-```
-
-Step statuses: `completed` · `in_progress` · `pending` · `blocked` (e.g. a rejected KYC).
-
-### Live updates (no polling)
-
-```http
-GET /api/v1/journey/stream
-Authorization: Bearer <token>
-Accept: text/event-stream
-```
-
-The stream sends the current journey immediately, then re-sends it every time the
-application changes - a Wasabi webhook arrives, the cardholder is approved, the
-browser updates itself.
-
-```
-event: journey
-data: {"reason": "kyc_status_changed", "journey": { ... }}
-```
-
-Browser client:
-
-```js
-const stream = new EventSource(`/api/v1/journey/stream`, {
-  headers: { Authorization: `Bearer ${token}` }   // or use a cookie
-});
-stream.addEventListener("journey", (e) => {
-  const { journey } = JSON.parse(e.data);
-  renderJourney(journey);
-});
-```
-
-> **Single-worker note:** the event bus is in-process. A multi-worker uvicorn
-> (`--workers N`) would give each worker its own bus, so a webhook handled by one
-> worker would not reach a client on another. Put Redis pub/sub behind the same
-> interface in `app/journey/events.py` before scaling out.
-
----
-
-## 🔐 Accounts & Security
-
-| Feature | Detail |
+| | |
 |---|---|
-| Password hashing | bcrypt, cost 12 (`app/core/passwords.py`) |
-| Password policy | 10+ chars, mixed case, a number, a symbol |
-| Account lockout | 5 failed logins → 15 minute lock |
-| Rate limiting | login 8/5min, register 5/hour, verify 10/10min |
-| Enumeration safety | Unknown email and wrong password are indistinguishable; `resend-verification` always returns 200 |
-| Email verification | Single-use token, SHA-256 at rest, 24 h expiry, consumed on use |
-| Tokens | JWT HS256, configurable TTL (`JWT_EXPIRE_MINUTES`), `jti` for future revocation |
-| Scoping | Every card, wallet and holder query is filtered by the JWT subject |
+| Card product | Mastercard, virtual, USD (card type `111078`, BIN `524013`) |
+| Stack | Python 3.10, FastAPI, MongoDB (Atlas), Docker |
+| Companion repo | the user web app: `virtual-card-User-interface-` |
 
-### Auth endpoints
+## Documentation
 
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/v1/users/register` | Create an account, returns a token |
-| `POST` | `/api/v1/users/login` | Sign in |
-| `POST` | `/api/v1/users/verify-email` | Confirm an email address |
-| `POST` | `/api/v1/users/resend-verification` | New verification link |
-| `GET` | `/api/v1/users/me` | Current profile |
-| `POST` | `/api/v1/users/change-password` | Change password |
-| `GET` | `/api/v1/users/dev/verification-link` | **Dev only** - 404 in production |
+| Read this | If you want to |
+|---|---|
+| [docs/API.md](docs/API.md) | Call the customer-facing API (users, journey, cards, wallet, webhooks) |
+| [docs/PARTNER_INTEGRATION_GUIDE.md](docs/PARTNER_INTEGRATION_GUIDE.md) | Integrate as a **reseller**, step by step |
+| [docs/PARTNER_API.md](docs/PARTNER_API.md) | Look up a reseller endpoint or webhook |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Host it: Docker, nginx, environment, Wasabi webhook setup |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Run it: reconcile job, treasury checks, reseller admin, incidents |
+| `/docs` on a running server | Interactive Swagger UI (generated from the code) |
+| [WHITEPAPER.md](WHITEPAPER.md) | Background and design rationale |
 
----
+## How money moves
 
-## 🏗️ System Architecture & Core Design
+Three different balances exist. Mixing them up is the most common mistake.
 
-This system acts as a high-security proxy layer between our consumer clients and the WasabiCard core payment network. It implements a strict **B2C (Business-to-Consumer) card management model**.
-
-
-######  ARCHTECTURE DESIGN
-
-### 🧠 The Core Engine Workflows 
-
-1. **Outbound Signed Transmission**: Outgoing requests undergo strict schema normalization. Fields are filtered by `clean_payload` and sorted alphabetically into a canonical string. The system signs this payload using our **RSA SHA-256 Private Key (`private.pem`)**, outputs a **Base64** token, and appends it to the `X-WSB-SIGNATURE` request headers.
-2. **Dual-Phase B2C Issuance Chain**: Because our MasterCard BIN profile (`539578`) enforces KYC controls (`needCardHolder = true`), card issuance requires two steps:
-   * **Phase 1**: Register user compliance vectors to acquire a platform `holderId`.
-   * **Phase 2**: Pass the numeric `holderId` into the card creation router to build and fund the virtual card.
-3. **Manual Audit Fallback**: If automated checks flag an identity account profile as `wait_audit`, a manual **Work Order Activation Ticket** maps the uploaded file identifiers to clear the compliance queue.
-4. **Asymmetric Webhook Mirroring**: The system exposes a public **ngrok** tunnel wrapper mapping inbound server updates directly to a local MongoDB data instance to track transaction status changes.
-5. **Live Journey Projection**: A single state machine (`app/journey/state.py`) folds the user record, uploaded KYC files, Wasabi cardholder, Wasabi card and M-Pesa top-ups into one ordered journey, published over SSE whenever a webhook moves the application forward.
-
----
-
-## 🚦 Endpoint Routing Map
-
-### 👤 0. Accounts & Journey (the customer-facing layer)
-* `POST /api/v1/users/register` - Creates an account and returns an access token.
-* `POST /api/v1/users/login` - Signs in with email and password.
-* `POST /api/v1/users/verify-email` - Confirms an email address with a single-use token.
-* `POST /api/v1/users/resend-verification` - Issues a new verification link (always 200, never leaks account existence).
-* `GET  /api/v1/users/me` - The signed-in user's profile.
-* `POST /api/v1/users/change-password` - Changes the password (current password required).
-* `GET  /api/v1/journey` - The full ordered application journey with per-step status, next action and progress.
-* `GET  /api/v1/journey/stream` - Server-Sent Events: live journey updates as Wasabi moves the application forward.
-* `GET  /api/v1/journey/events/history` - The webhook events that affected this customer's application.
-
-### 📦 1. Core Common Integration Utilities
-* `POST /api/v1/cards/supported-BINS/types` - Retrieves supported card profiles and operational constraints.
-* `GET /api/v1/cards/diagnostic/kenya-cities` - Queries approved geographic destination tokens (Nairobi Code: `KE-047-001`).
-
-### 📁 2. Compliance Document Management
-* `POST /api/v1/cards/kyc/upload` - Processes `multipart/form-data` binary streams (ID front, back, selfie) to secure unique compliance file references. Pass `kind=front|back|selfie` so the journey tracker knows which slot the file fills.
-
-### 👤 3. Cardholder Registry
-* `POST /api/v1/cards/cardholder/register` - Registers full KYC compliance details (Phase 1) to generate a numeric `holderId`.
-* `PUT  /api/v1/cards/cardholder/{holder_id}` - Corrects and resubmits a **rejected** cardholder (Wasabi only accepts updates when `status=reject`).
-* `GET  /api/v1/cards/cardholder/{holder_id}` - Holder status plus a `review` block naming who is approving it.
-* `GET  /api/v1/cards/cardholders` - The caller's own cardholders.
-
-### 🛠️ 4. Manual Ticketing Workspace
-* `POST /api/v1/cards/work-order/submit` - Submits manual activation tickets to unblock pending audit queues (`tradeStatus: processing`).
-
-### 💳 5. Virtual Card Lifecycle
-* `POST /api/v1/cards/create` - Assembles the `holderId`, BIN properties, and funding criteria to manufacture the card (Phase 2).
-* `GET /api/v1/cards/list-BINS` - Paginated transaction logs checking local wallet parameters.
-* `POST /api/v1/cards/info` - Pulls status metadata arrays.
-* `POST /api/v1/cards/sensitive` - Decrypts true 16-digit card components.
-* `POST /api/v1/cards/balance` - Live accounting checks.
-
-### 💸 6. Ledgers & Funding
-* `POST /api/v1/cards/deposit` - Moves capital from our treasury wallet into the target virtual card.
-* `POST /api/v1/cards/withdraw` - Recovers funds from a card back into our core vault.
-
-### 🔒 7. Security & Risk Management
-* `POST /api/v1/cards/freeze` / `/unfreeze` - Instantly locks or unlocks transaction card pipelines.
-* `POST /api/v1/cards/cancel` - Permanently destroys active asset lines.
-
-### 📬 8. Callback Events
-* `POST /api/v1/cards/wasabi` - Public webhook endpoint capturing lifecycle mutations asynchronously.
-
----
-
-## 🔐 Security Protocols & Environment Masking
-
-The project implements a **Git Shield Strategy** via `.gitignore` to ensure production secrets and private cryptographic keys are completely masked before code is pushed to GitHub:
-
-* `app/.env` - Protects database URLs, JWT encryption seeds, and gateway API profiles.
-* `app/keys/private.pem` - Private RSA key used to sign requests. Must never leave the container environment.
-* `app/keys/public.pem` / `wsbpublic.pem` - Identity verification keys.
-
----
-
-## 🐳 Docker Deployment & Containerization
-
-The application is fully containerised to isolate dependencies and simplify cloud infrastructure deployments.
-
-### 1. File Context Management
-* **`Dockerfile`**: Sets up a Python runtime, compiles cryptographic binaries, sets the `PYTHONPATH=/code` module search index, and exposes port `8000`.
-* **`.dockerignore`**: Excludes local virtual environments (`.venv/`) and cache artifacts to keep the image compact.
-
-### 2. Standard Container Commands
-
-To compile the image context from scratch:
-```bash
-docker build --no-cache -t mamlaka-cards-service .
+```
+Customer pays KES (M-Pesa / Airtel)
+        |
+        v
+ Customer wallet  (KES ledger in this service)        Reseller's customer pays the RESELLER instead;
+        |  card charge                                  the reseller prepays us:
+        v                                                      |
+ Card operation  <------------------------------------  Reseller FLOAT (KES ledger, credited by an admin)
+        |
+        v
+ Wasabi merchant balance  (real USD at Wasabi)  <- what Wasabi actually deducts for every card
 ```
 
-To run the container instance securely (injecting local configuration secrets and mounting key folders via external volume bindings without baking them into the shared image):
-```bash
-docker run -d \
-  --name virtual-cards-app \
-  -p 8000:8000 \
-  --env-file app/.env \
-  -v \$(pwd)/app/keys:/code/app/keys \
-  mamlaka-cards-service
+- A **float** is a ledger number, not cash. It is only a promise unless real USD backs it at Wasabi.
+- `app/core/treasury.py` compares the real Wasabi USD with what resellers have prepaid, refuses issuance it cannot cover, and alerts when the balance runs low (see [docs/OPERATIONS.md](docs/OPERATIONS.md)).
+- Every card operation is idempotent: the wallet or float is **held first**, the provider is called once, then the hold is captured (success) or released (failure). An unknown outcome never refunds; it is settled later by webhook or the reconcile job.
+
+## Architecture
+
+```
+            Customers (web app)                    Resellers (their servers)
+                    |                                          |
+        /api/v1/users, /journey, /cards, /wallet        /api/v1/partner/*   (X-API-Key)
+                    \                                         /
+                     +---------------  FastAPI  ------------+
+                     |   users . journey . cards . wallet . partners . mobilemoney . mpesa
+                     |   orchestrator (idempotent operations)  .  ledger  .  treasury
+                     +--------------------------------------------------------------+
+                        |                |                 |                   |
+                    MongoDB          Wasabi API       Mamlaka payments      Daraja (M-Pesa)
+                  (ledger, ops)    (signed requests)  gateway (top-ups,    (optional, direct)
+                                        |              payouts)
+                              Wasabi webhooks  -> POST /api/v1/webhooks/wasabi
+                              Gateway callbacks -> POST /api/v1/webhooks/mamlaka
+                              Events to resellers <- signed, retried (see docs/PARTNER_API.md)
 ```
 
-To trace active background processing logs:
-```bash
-docker logs virtual-cards-app
+Key design points:
+
+1. **Signed outbound requests.** Payloads are normalised, sorted into a canonical string and signed with our RSA private key (SHA-256, Base64) in `X-WSB-SIGNATURE`.
+2. **Two-phase issuance.** The card type requires KYC (`needCardHolder`): register a cardholder, wait for Wasabi's approval, then create the card with the `holderId`. Approval is Wasabi's decision, not ours.
+3. **Webhooks are hints, not truth.** Callbacks only say *what changed*. The handlers re-read the authoritative state from Wasabi, so a forged callback can at worst trigger a read.
+4. **Reconciliation.** A worker (`python -m app.jobs.reconcile`, every 3 minutes) recovers missed webhooks, settles operations, retries reseller events and checks that wallet counters equal the ledger.
+5. **Live journey.** `app/journey/state.py` folds the user, KYC files, cardholder, card and top-ups into one ordered journey, pushed over Server-Sent Events.
+
+## Repository layout
+
 ```
+app/
+  cards/            Wasabi client, card/cardholder service, customer card routes
+  partners/         Reseller (tenant) layer: API keys, customers, events, admin CLI
+  mobilemoney/      Mamlaka payments gateway client: STK top-ups and payouts
+  mpesa/            Direct Safaricom Daraja STK push
+  wallet/           KES wallet ledger, pricing, wallet routes
+  transactions/     Idempotent provider-operation lifecycle
+  users/  journey/  Accounts, email verification, the application journey (SSE)
+  webhooks/         Wasabi and gateway callbacks
+  jobs/             Reconcile worker
+  core/             Config, database, security, rate limiting, treasury, mail
+tests/              pytest suite (no network, no real database)
+deploy/             nginx configuration
+docs/               Developer documentation
+postman/            Postman collections
+Dockerfile  docker-compose.yml  requirements*.txt  pytest.ini  .env.example
+```
+
+## Quick start (local)
+
+```bash
+git clone https://github.com/BENMULWA/Virtual-card-Integration-Pipeline.git
+cd Virtual-card-Integration-Pipeline
+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+
+cp .env.example .env            # then fill it in; see docs/DEPLOY.md for every setting
+mkdir -p app/keys               # private.pem, public.pem (yours) and wsbpublic.pem (Wasabi's)
+
+uvicorn app.main:app --port 8001 --reload     # http://localhost:8001/docs
+```
+
+Run the tests (they use in-memory fakes and never reach Wasabi, Mongo or M-Pesa):
+
+```bash
+python -m pytest -q
+```
+
+> **One worker only.** The rate limiter and the live-update bus are in-process. Do not run `--workers N` until they are moved to Redis.
+
+## The customer journey
+
+| # | Step | The customer | API |
+|---|------|--------------|-----|
+| 1 | `ACCOUNT` | Registers | `POST /api/v1/users/register` |
+| 2 | `VERIFY_EMAIL` | Clicks the emailed link | `POST /api/v1/users/verify-email` |
+| 3 | `KYC_DOCUMENTS` | Uploads ID front, back and a selfie | `POST /api/v1/cards/kyc/upload` |
+| 4 | `KYC_SUBMISSION` | Submits identity details | `POST /api/v1/cards/cardholder/register` |
+| 5 | `KYC_REVIEW` | Waits for Wasabi's decision | webhook / `GET /api/v1/journey` |
+| 6 | `CARD_ISSUANCE` | Requests the card | `POST /api/v1/cards/create` |
+| 7 | `FUNDING` | Tops up the wallet, loads the card | `POST /api/v1/wallet/topup` then `POST /api/v1/cards/deposit` |
+
+`GET /api/v1/journey` returns all seven steps with their status; `GET /api/v1/journey/stream` pushes updates live. Details and the browser client are in [docs/API.md](docs/API.md).
+
+## Security at a glance
+
+- Passwords: bcrypt (cost 12), strong-password policy, account lockout after 5 failures, per-endpoint rate limits.
+- Accounts cannot be enumerated: unknown email and wrong password look identical.
+- JWT (HS256) on every customer route; every card, wallet and holder query is scoped to the token's user.
+- Reseller API keys are stored only as SHA-256 hashes and shown once.
+- Gateway and reseller webhooks are authenticated with HMAC-SHA256 over the raw body.
+- Card numbers and CVVs are never stored or logged. The reseller reveal endpoint records who revealed which card (never the values) and tells resellers to re-authenticate the user first. The customer route `POST /api/v1/cards/sensitive` currently relies on the JWT alone; add a step-up before launch (see "Known limitations" in [docs/API.md](docs/API.md)).
+- Secrets (`.env`, `app/keys/*.pem`) are git-ignored and mounted at runtime, never baked into the image.
+
+## Related
+
+- User web app: https://github.com/BENMULWA/virtual-card-User-interface-
+- Reseller documentation: [docs/PARTNER_INTEGRATION_GUIDE.md](docs/PARTNER_INTEGRATION_GUIDE.md)
