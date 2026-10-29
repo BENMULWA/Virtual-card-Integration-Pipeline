@@ -23,7 +23,7 @@ MIN_AGE = timedelta(minutes=2)  # give the normal callback a chance first
 
 async def run_once() -> dict:
     now = datetime.utcnow()
-    stats = {"ops": 0, "settled": 0, "topups": 0, "payouts": 0, "partner_events": 0, "partner_kyc": 0, "treasury": None, "ledger_mismatch": 0}
+    stats = {"ops": 0, "cards": 0, "settled": 0, "topups": 0, "payouts": 0, "partner_events": 0, "partner_kyc": 0, "treasury": None, "ledger_mismatch": 0}
 
     # 1. Wasabi operations still in flight
     async for op in database.transactions_collection.find(
@@ -33,6 +33,17 @@ async def run_once() -> dict:
             stats["ops"] += 1
         except Exception:  # noqa: BLE001
             logger.exception("reconcile failed for %s", op["merchant_order_no"])
+
+    # 1b. Cards still "pending" in our records: the webhook that would refresh them was missed
+    async for card in database.cards_collection.find(
+            {"status": "pending", "created_at": {"$lt": now - MIN_AGE}}):
+        try:
+            data = await service.refresh_card(card["card_no"])
+            if data and data.get("status") != "pending":
+                stats["cards"] += 1
+                await partner_events.emit_for_owner(card["owner_id"], "card.updated", {"cardNo": card["card_no"]})
+        except Exception:  # noqa: BLE001
+            logger.exception("card refresh failed for %s", card["card_no"])
 
     # 2. Final operations whose wallet effect never got applied (crash between steps)
     async for op in database.transactions_collection.find(

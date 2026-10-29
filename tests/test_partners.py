@@ -340,3 +340,26 @@ async def test_quote_matches_what_issuance_then_costs_the_float(api, comet, wasa
     assert (await api.get("/api/v1/partner/quote?kind=issue&amount=10.555&cardTypeId=8", headers=headers)).status_code == 422
     assert (await api.get("/api/v1/partner/quote?kind=issue&amount=10&cardTypeId=99", headers=headers)).status_code == 422
     assert (await api.get("/api/v1/partner/quote?kind=bad&amount=10&cardTypeId=8", headers=headers)).status_code == 422
+
+
+async def test_card_leaves_pending_without_the_webhook(api, comet, wasabi, monkeypatch):
+    from datetime import datetime, timedelta
+    from app.jobs import reconcile
+    ref = await issue_one(api, comet, wasabi)
+
+    async def operations(payload):
+        return {"success": True, "data": {"records": [{"orderNo": "W1", "cardNo": "C1", "status": "success"}]}}
+
+    async def info(payload): return {"success": True, "data": {"status": "Normal"}}
+    monkeypatch.setattr(wc, "card_operations", operations)
+    monkeypatch.setattr(wc, "card_info", info)
+
+    # the reseller's refresh settles the operation and the card together
+    assert (await api.get(f"/api/v1/partner/operations/{ref}?refresh=true", headers=comet[1])).json()["status"] == "SUCCESS"
+    assert (await database.cards_collection.find_one({"card_no": "C1"}))["status"] == "Normal"
+
+    # a card left "pending" after its operation settled is picked up by the reconcile job
+    await database.cards_collection.update_one(
+        {"card_no": "C1"}, {"$set": {"status": "pending", "created_at": datetime.utcnow() - timedelta(minutes=5)}})
+    assert (await reconcile.run_once())["cards"] == 1
+    assert (await database.cards_collection.find_one({"card_no": "C1"}))["status"] == "Normal"

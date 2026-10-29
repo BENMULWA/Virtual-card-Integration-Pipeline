@@ -190,6 +190,12 @@ async def reconcile_operation(order_no: str) -> Optional[str]:
         return op["status"]
     updated = await ops.finish_operation(order_no, status, data)
     await settle_funding(updated)
+    card_no = records[0].get("cardNo") if records else None
+    if card_no and status in ops.FINAL_STATUSES:  # without the webhook nothing else moves the card off "pending"
+        try:
+            await refresh_card(card_no)
+        except Exception:  # noqa: BLE001 - the operation is settled; the reconcile job retries the card
+            logger.warning("card refresh failed for %s", card_no, exc_info=True)
     if updated and status in ops.FINAL_STATUSES:  # a reseller waits on this to settle its own customer's money
         await partner_events.emit_for_owner(op["owner_id"], "operation.updated", {
             "reference": order_no, "type": op["type"], "status": status})
