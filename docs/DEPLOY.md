@@ -4,7 +4,7 @@ How to host the service and connect Wasabi, the payments gateway and resellers t
 
 ## 1. Pick a host name
 
-Give the API a host of its own, for example `cards.mamlakapsp.com`. `payments.mamlakapsp.com` is the payments gateway and does not serve these routes. Create a DNS `A` record to the server and get a TLS certificate (certbot or similar). Everything below assumes `https://cards.mamlakapsp.com`.
+The API has a host of its own: `virtual.cards.mamlakapsp.com`. `payments.mamlakapsp.com` is the payments gateway and does not serve these routes. Create a DNS `A` record to the server and get a TLS certificate (certbot or similar). Everything below uses `https://virtual.cards.mamlakapsp.com`.
 
 ## 2. What you need on the server
 
@@ -49,7 +49,7 @@ Copy `deploy/nginx-cards.conf` into `/etc/nginx/snippets/mamlaka-cards.conf` and
 ```nginx
 server {
     listen 443 ssl;
-    server_name cards.mamlakapsp.com;
+    server_name virtual.cards.mamlakapsp.com;
     # ssl_certificate ... (certbot)
     include snippets/mamlaka-cards.conf;
 }
@@ -65,7 +65,7 @@ The snippet exposes `/health`, `/api/v1/webhooks/`, `/api/v1/mpesa/callback/`, `
 
 Give Wasabi:
 
-1. **Webhook URL:** `https://cards.mamlakapsp.com/api/v1/webhooks/wasabi`
+1. **Webhook URL:** `https://virtual.cards.mamlakapsp.com/api/v1/webhooks/wasabi`
 2. **Your server's public IP** to allowlist for API calls. Production API calls from an unlisted IP can be refused.
 3. Your **public key** (`public.pem`).
 
@@ -73,7 +73,7 @@ Ask them to confirm the **webhook signature algorithm**. Until it is confirmed, 
 
 ## 7. Connect the payments gateway (top-ups)
 
-Set `AIRTEL_CALLBACK_BASE_URL=https://cards.mamlakapsp.com`. The service tells the gateway to call back at `/api/v1/webhooks/mamlaka`. Callbacks are authenticated by an HMAC over the raw body (`X-Mamlaka-Signature`), keyed with `AIRTEL_CALLBACK_SIGNING_SECRET`; ask the gateway operator for a signing secret that belongs to **your own merchant**.
+Set `AIRTEL_CALLBACK_BASE_URL=https://virtual.cards.mamlakapsp.com`. The service tells the gateway to call back at `/api/v1/webhooks/mamlaka`. Callbacks are authenticated by an HMAC over the raw body (`X-Mamlaka-Signature`), keyed with `AIRTEL_CALLBACK_SIGNING_SECRET`; ask the gateway operator for a signing secret that belongs to **your own merchant**.
 
 ## 8. Environment reference
 
@@ -103,8 +103,8 @@ Copy `.env.example` to `.env`. The settings that matter most:
 ## 9. Verify
 
 ```bash
-curl https://cards.mamlakapsp.com/health                      # {"status":"ok",...}
-curl -i https://cards.mamlakapsp.com/api/v1/partner/balance   # 401: routes are live, a key is needed
+curl https://virtual.cards.mamlakapsp.com/health                      # {"status":"ok",...}
+curl -i https://virtual.cards.mamlakapsp.com/api/v1/partner/balance   # 401: routes are live, a key is needed
 ```
 
 ## 10. Production checklist

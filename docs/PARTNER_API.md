@@ -1,6 +1,6 @@
 # Mamlaka Virtual Cards - Partner API
 
-Base URL: `https://payments.mamlakapsp.com/api/v1/partner`
+Base URL: `https://virtual.cards.mamlakapsp.com/api/v1/partner`
 
 ## Credentials you receive (from Mamlaka, over a secure channel)
 

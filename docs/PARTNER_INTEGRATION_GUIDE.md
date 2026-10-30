@@ -2,7 +2,7 @@
 
 Issue virtual Mastercards to your customers through one API. Mamlaka handles KYC submission, card issuance and card operations. You keep the customer relationship.
 
-**Base URL:** `https://payments.mamlakapsp.com/api/v1/partner`
+**Base URL:** `https://virtual.cards.mamlakapsp.com/api/v1/partner`
 
 ## 1. Authorization
 - Mamlaka gives you two secrets: an **API key** (`mk_live_...`) and a **webhook secret** (`whsec_...`).
@@ -12,7 +12,7 @@ Issue virtual Mastercards to your customers through one API. Mamlaka handles KYC
 - Lost or leaked key? Ask Mamlaka to regenerate it; the old one stops working immediately.
 
 ```bash
-curl https://payments.mamlakapsp.com/api/v1/partner/balance -H "X-API-Key: $MAMLAKA_API_KEY"
+curl https://virtual.cards.mamlakapsp.com/api/v1/partner/balance -H "X-API-Key: $MAMLAKA_API_KEY"
 ```
 
 ## 2. Rules for every call

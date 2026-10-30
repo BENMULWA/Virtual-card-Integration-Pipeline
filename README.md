@@ -21,7 +21,7 @@ Cards are issued by Wasabi's issuing bank. This service handles KYC submission, 
 | [docs/PARTNER_INTEGRATION_GUIDE.md](docs/PARTNER_INTEGRATION_GUIDE.md) | Integrate as a **reseller**, step by step |
 | [docs/PARTNER_API.md](docs/PARTNER_API.md) | Look up a reseller endpoint or webhook |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Host it: Docker, nginx, environment, Wasabi webhook setup |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Run it: reconcile job, treasury checks, reseller admin, incidents |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Run it: reconcile job, treasury checks, pricing and margins, reseller admin, incidents |
 | `/docs` on a running server | Interactive Swagger UI (generated from the code) |
 | [WHITEPAPER.md](WHITEPAPER.md) | Background and design rationale |
 
@@ -44,6 +44,11 @@ Customer pays KES (M-Pesa / Airtel)
 
 - A **float** is a ledger number, not cash. It is only a promise unless real USD backs it at Wasabi.
 - `app/core/treasury.py` compares the real Wasabi USD with what resellers have prepaid, refuses issuance it cannot cover, and alerts when the balance runs low (see [docs/OPERATIONS.md](docs/OPERATIONS.md)).
+- **Pricing.** Our cost of a usable dollar is the USDT price divided by what reaches Wasabi after its 1.5% deposit fee
+  (`129.50 / 0.985 = 131.47 KES`). Our margin goes on top: `FX_SPREAD_PCT` for our own customers, a per-reseller
+  margin (default `PARTNER_MARGIN_PCT`) for resellers, who add their own on top again. Wasabi's card fees are treated
+  as cost. `python tests/resellers_keys.py pricing` prints the rate card; resellers read theirs at
+  `GET /api/v1/partner/rates`. Details: [docs/OPERATIONS.md](docs/OPERATIONS.md#pricing-and-margins).
 - Every card operation is idempotent: the wallet or float is **held first**, the provider is called once, then the hold is captured (success) or released (failure). An unknown outcome never refunds; it is settled later by webhook or the reconcile job.
 
 ## Architecture
@@ -141,6 +146,23 @@ python -m pytest -q
 - Gateway and reseller webhooks are authenticated with HMAC-SHA256 over the raw body.
 - Card numbers and CVVs are never stored or logged. The reseller reveal endpoint records who revealed which card (never the values) and tells resellers to re-authenticate the user first. The customer route `POST /api/v1/cards/sensitive` currently relies on the JWT alone; add a step-up before launch (see "Known limitations" in [docs/API.md](docs/API.md)).
 - Secrets (`.env`, `app/keys/*.pem`) are git-ignored and mounted at runtime, never baked into the image.
+
+## Running in production
+
+Live at `https://virtual.cards.mamlakapsp.com` (Docker on AWS, nginx and certbot in front). Wasabi's webhook URL is
+`https://virtual.cards.mamlakapsp.com/api/v1/webhooks/wasabi`. Wasabi only accepts API calls from allowlisted IPs,
+so calls from a laptop on another network get `403 Not authorized`; test through the server.
+
+```bash
+cd ~/virtual-cards
+git pull
+docker compose up -d --build          # api + reconcile worker
+docker compose ps                     # both Up; api (healthy)
+docker compose logs -f api reconcile
+```
+
+The host port comes from `API_PORT` in `.env` (8010 on the current server, where 8000 is taken). Full setup:
+[docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Related
 
