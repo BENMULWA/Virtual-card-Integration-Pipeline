@@ -9,6 +9,7 @@
 #   python -m app.partners.cli set-margin    --slug comet --pct 1.5   (omit --pct to use PARTNER_MARGIN_PCT)
 #   python -m app.partners.cli pricing       (our cost of a dollar and every rate we sell at)
 #   python -m app.partners.cli earnings      --days 30   (margin kept on settled card operations)
+#   python -m app.partners.cli statement     --slug comet --limit 50   (every movement on the float)
 #   python -m app.partners.cli list
 # =========================================================
 
@@ -37,6 +38,23 @@ def print_pricing(tenants: list) -> None:
         print(f"{label:24} {card['marginPct']:>6}%  {card['kesPerUsd']:>8}  "
               f"{ledger.from_minor(issue['kes_minor']):>10}  {ledger.from_minor(load['kes_minor']):>9}")
     print("* includes Wasabi's $2 card fee. Resellers add their own margin on top when they price their customers.")
+
+
+async def print_statement(owner: str, limit: int) -> None:
+    """Every ledger movement on a float, oldest first, with the running balance (KES)."""
+    entries = [e async for e in database.ledger_collection.find({"owner_id": owner}).sort("created_at", 1)]
+    available = held = 0
+    rows = []
+    for entry in entries:
+        available += int(entry.get("available", 0))
+        held += int(entry.get("held", 0))
+        rows.append((entry, available, held))
+    print(f"{'Date (UTC)':19}  {'Movement':10}  {'Available +/-':>13}  {'Held +/-':>10}  {'Balance':>10}  Reference")
+    for entry, avail, _ in rows[-limit:]:
+        print(f"{entry['created_at']:%Y-%m-%d %H:%M:%S}  {entry['kind']:10}  {ledger.from_minor(entry.get('available', 0)):>13}  "
+              f"{ledger.from_minor(entry.get('held', 0)):>10}  {ledger.from_minor(avail):>10}  {entry['ref']}")
+    print(f"Now: available {ledger.from_minor(available)} KES, held {ledger.from_minor(held)} KES "
+          f"({len(entries)} movements{f', last {limit} shown' if len(entries) > limit else ''})")
 
 
 async def print_earnings(days: int) -> None:
@@ -104,6 +122,9 @@ async def run(args) -> int:
             print(f"No tenant '{args.slug}'")
             return 1
         owner = service.float_owner(tenant["tenant_id"])
+        if args.cmd == "statement":
+            await print_statement(owner, args.limit)
+            return 0
         if args.cmd == "credit-float":
             credited = await ledger.credit(owner, int(round(args.amount_kes * 100)), ref=args.ref, kind="float_topup",
                                            meta={"by": "admin-cli"})
@@ -137,6 +158,9 @@ def main():
     sub.add_parser("pricing")
     e = sub.add_parser("earnings")
     e.add_argument("--days", type=int, default=30)
+    st = sub.add_parser("statement")
+    st.add_argument("--slug", required=True)
+    st.add_argument("--limit", type=int, default=50)
     sub.add_parser("list")
     sys.exit(asyncio.run(run(parser.parse_args())))
 

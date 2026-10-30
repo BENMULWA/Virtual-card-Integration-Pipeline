@@ -31,6 +31,7 @@ MENU = """
   8) Pricing: our cost of a dollar and the rate each reseller pays
   9) Set a reseller's margin
   10) Earnings: margin kept on card operations
+  11) Float statement: every movement on a reseller's float
   q) Quit
 """
 
@@ -41,7 +42,7 @@ def ask(prompt: str) -> str:
 
 def run(**args):
     defaults = dict(name=None, slug=None, webhook_url=None, card_types=None, max_amount=None,
-                    amount_kes=None, ref=None, url=None, pct=None, days=30)
+                    amount_kes=None, ref=None, url=None, pct=None, days=30, limit=50)
     asyncio.run(cli.run(Namespace(**{**defaults, **args})))
 
 
@@ -80,6 +81,8 @@ def main():
                     pct=ask("Margin in percent, e.g. 1.5 (blank = default): ") or None)
             elif choice == "10":
                 run(cmd="earnings", days=int(ask("Last how many days? [30] ") or 30))
+            elif choice == "11":
+                run(cmd="statement", slug=ask("Reseller slug: "))
             elif choice == "q":
                 return
             else:

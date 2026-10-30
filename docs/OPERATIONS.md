@@ -78,6 +78,7 @@ All reseller administration is one script, run on the server from the project fo
 | 8 | `pricing` | Your cost of a dollar and the rate each reseller pays |
 | 9 | `set-margin --slug comet --pct 1.5` | Your margin on one reseller (blank resets to `PARTNER_MARGIN_PCT`) |
 | 10 | `earnings --days 30` | Margin kept on settled card operations |
+| 11 | `statement --slug comet` | Every movement on the float (top-ups, holds, charges, refunds) with the running balance |
 
 Notes:
 
