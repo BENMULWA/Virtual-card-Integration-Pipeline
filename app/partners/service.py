@@ -16,7 +16,9 @@ from typing import Optional
 from fastapi import Header, HTTPException, Request
 from pymongo.errors import DuplicateKeyError
 
-from app.core import database
+from decimal import Decimal, InvalidOperation
+
+from app.core import config, database
 from app.core.ratelimit import RateLimiter
 
 KEY_PREFIX = "mk_live_"
@@ -65,6 +67,27 @@ async def create_tenant(name: str, slug: str, webhook_url: Optional[str] = None,
     except DuplicateKeyError:
         raise ValueError(f"A tenant with slug '{slug}' already exists")
     return tenant, key
+
+
+def margin_pct(tenant: dict) -> Decimal:
+    """Our margin on this reseller's card operations: its own rate if set, else PARTNER_MARGIN_PCT."""
+    value = tenant.get("margin_pct")
+    return Decimal(str(value)) if value is not None else config.PARTNER_MARGIN_PCT
+
+
+async def set_margin(slug: str, pct: Optional[str]) -> None:
+    """Set (or with None, clear back to the default) the margin we charge this reseller, in percent."""
+    if pct is not None:
+        try:
+            value = Decimal(pct)
+        except InvalidOperation:
+            raise ValueError("Margin must be a number of percent, e.g. 1.5")
+        if not Decimal(0) <= value <= Decimal(20):
+            raise ValueError("Margin must be between 0 and 20 percent")
+        pct = str(value)
+    result = await database.tenants_collection.update_one({"slug": slug}, {"$set": {"margin_pct": pct}})
+    if not result.matched_count:
+        raise ValueError(f"No tenant '{slug}'")
 
 
 async def rotate_key(slug: str) -> str:

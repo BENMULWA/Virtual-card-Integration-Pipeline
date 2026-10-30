@@ -87,7 +87,7 @@ async def partner_floats_kes() -> Decimal:
 async def snapshot() -> dict:
     available = await available_usd(max_age=0)
     floats_kes = await partner_floats_kes()
-    rate = Decimal(config.FX_KES_PER_USD) if config.FX_KES_PER_USD else None
+    rate = Decimal(config.FX_KES_PER_USD) / (1 - config.WASABI_DEPOSIT_FEE_PCT / 100) if config.FX_KES_PER_USD else None
     floats_usd = (floats_kes / rate).quantize(Decimal("0.01")) if rate else None
     if available is None:
         status = None

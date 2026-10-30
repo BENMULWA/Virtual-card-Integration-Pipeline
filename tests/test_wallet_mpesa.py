@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from app.cards import wasabi_client as wc
+from app.core import config
 from app.core.security import create_access_token
 from app.main import app
 from app.mpesa import client as mc
@@ -49,12 +50,30 @@ def test_quote_math():
     assert pricing.quote_debit(Decimal("10"), Decimal("1"))["kes_minor"] == 145_860
 
 
-def test_card_type_fee_terms_override_config_and_fixed_fee_is_usd():
-    # Wasabi's own terms (0% rate, 0.50 USD fixed) replace our default 2% spread; the fixed fee converts at the FX rate.
-    ct = {"rechargeFeeRate": "0", "rechargeFixedFee": "0.5", "cardPrice": "2", "cardPriceCurrency": "USD"}
-    assert pricing.quote_debit(Decimal("10"), **pricing.card_type_fees(ct))["kes_minor"] == 130_000
-    q = pricing.quote_issue(Decimal("10"), ct)
-    assert q["kes_minor"] == (12 * 130 + 65) * 100     # (10 + 2 card price) USD * 130 + 0.50 USD * 130
+def test_wasabi_fees_are_our_cost_and_our_margin_goes_on_top():
+    # Wasabi's terms (1% rate, 0.50 USD fixed) are a cost; our 2% spread is added on top, never replaced by them.
+    ct = {"rechargeFeeRate": "1", "rechargeFixedFee": "0.5", "cardPrice": "2", "cardPriceCurrency": "USD"}
+    q = pricing.quote_debit(Decimal("10"), **pricing.card_type_fees(ct))
+    assert q["kes_minor"] == 133_926 and q["cost_kes"] == "1313.00"   # 10 * 1.01 * 130 = 1,313.00 cost, * 1.02
+    assert Decimal(q["margin_kes"]) == Decimal("26.26")
+    ct_free = {**ct, "rechargeFeeRate": "0", "rechargeFixedFee": "0"}
+    assert pricing.quote_debit(Decimal("10"), **pricing.card_type_fees(ct_free))["kes_minor"] == 132_600
+    issue = pricing.quote_issue(Decimal("10"), ct)
+    assert issue["kes_minor"] == 167_342   # ((10 + 2 card price) * 1.01 + 0.50) USD * 130 * 1.02 = 1,673.41
+
+
+def test_deposit_fee_raises_our_cost_of_a_dollar(monkeypatch):
+    monkeypatch.setattr(config, "WASABI_DEPOSIT_FEE_PCT", Decimal("1.5"))
+    monkeypatch.setattr(config, "FX_KES_PER_USD", "129.50")
+    card = pricing.rate_card(Decimal("1"))
+    assert card["costRate"] == "131.47" and card["kesPerUsd"] == "132.79"   # 129.50 / 0.985, then + 1%
+    q = pricing.quote_debit(Decimal("10"), margin_pct=Decimal("0"))
+    assert q["cost_kes"] == "1314.72" and q["margin_kes"] == "0.01"         # selling at cost: only rounding is kept
+
+
+def test_withdrawals_are_valued_at_cost_less_margin():
+    q = pricing.quote_credit(Decimal("10"))
+    assert q["kes_minor"] == 127_400 and q["margin_kes"] == "26.00"   # 1,300 at cost, we keep 2%
 
 
 # ------------------------------------------------------------------ ledger invariants

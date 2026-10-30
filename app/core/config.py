@@ -172,8 +172,11 @@ WITHDRAW_MAX_KES = int(get_optional_env("WITHDRAW_MAX_KES", "20000"))
 # =========================
 # PRICING (wallet KES -> card USD). No FX feed is wired in: you must set the rate.
 # =========================
-FX_KES_PER_USD = get_optional_env("FX_KES_PER_USD")               # e.g. 129.00 ; funding is off while empty
-FX_SPREAD_PCT = Decimal(get_optional_env("FX_SPREAD_PCT", "2.0"))   # margin added on KES->USD
+# Our cost of one usable dollar = FX_KES_PER_USD / (1 - WASABI_DEPOSIT_FEE_PCT/100); margins are added on top.
+FX_KES_PER_USD = get_optional_env("FX_KES_PER_USD")               # KES we pay per USDT ; funding is off while empty
+WASABI_DEPOSIT_FEE_PCT = Decimal(get_optional_env("WASABI_DEPOSIT_FEE_PCT", "1.5"))  # Wasabi keeps this on each USDT deposit
+FX_SPREAD_PCT = Decimal(get_optional_env("FX_SPREAD_PCT", "2.0"))   # our margin to our own (retail) customers
+PARTNER_MARGIN_PCT = Decimal(get_optional_env("PARTNER_MARGIN_PCT", "1.0"))  # our margin to resellers (per-tenant override)
 CARD_FUNDING_FEE_KES = Decimal(get_optional_env("CARD_FUNDING_FEE_KES", "0"))  # flat fee per funding op
 
 # =========================

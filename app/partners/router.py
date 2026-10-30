@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from app.cards import service
 from app.cards import wasabi_client as wasabi
 from app.cards.routeendpoint import ALLOWED_UPLOADS, KYC_KINDS, _extract_file_id, client_ip, strip_private
-from app.core import database
+from app.core import config, database
 from app.core.config import MAX_UPLOAD_BYTES
 from app.core.money import parse_amount
 from app.models import CardAmountRequest, CardNoRequest, CreateCardholderRequest, CreateCardRequest
@@ -46,6 +46,25 @@ class CustomerCreate(BaseModel):
 async def float_balance(tenant: dict = Depends(partners.tenant_guard)):
     """Your prepaid float (KES). Card issuance and card deposits are debited from it."""
     return await ledger.get_balance(partners.float_owner(tenant["tenant_id"]))
+
+
+@router.get("/rates")
+async def rates(tenant: dict = Depends(partners.tenant_guard)):
+    """Your rate card: the KES you pay per USD put on a card, and Wasabi's card fees (charged at the same rate).
+    Indicative: GET /quote gives the exact figure for an operation, and rates change when our USD cost does."""
+    kes_per_usd = pricing.rate_card(partners.margin_pct(tenant))["kesPerUsd"]
+    allowed = tenant.get("allowed_card_type_ids") or []
+    card_types = []
+    for card_type in (await wasabi.get_card_types()).get("data") or []:
+        type_id = card_type.get("cardTypeId")
+        if (allowed and type_id not in allowed) or type_id not in config.ALLOWED_CARD_TYPE_IDS:
+            continue
+        card_types.append({"cardTypeId": type_id, "cardFeeUsd": card_type.get("cardPrice"),
+                           "depositFeePct": card_type.get("rechargeFeeRate"),
+                           "depositFixedFeeUsd": card_type.get("rechargeFixedFee"),
+                           "minOpeningUsd": card_type.get("depositAmountMinQuotaForActiveCard"),
+                           "minDepositUsd": card_type.get("rechargeMinQuota")})
+    return {"currency": "KES", "kesPerUsd": kes_per_usd, "cardTypes": card_types}
 
 
 # ---------------------------------------------------------------- customers
@@ -144,7 +163,7 @@ async def create_card(external_id: str, payload: CreateCardRequest, key: str = D
     order_no = build_order_no("CRD", customer["owner_id"], key)
     return await service.issue_card(customer["owner_id"], order_no, payload,
                                     funding_owner=partners.float_owner(tenant["tenant_id"]),
-                                    insufficient_detail=NO_FLOAT)
+                                    insufficient_detail=NO_FLOAT, margin_pct=partners.margin_pct(tenant))
 
 
 @router.get("/customers/{external_id}/cards")
@@ -189,7 +208,7 @@ async def deposit_to_card(external_id: str, payload: CardAmountRequest, key: str
         raise HTTPException(422, f"Amount exceeds your per-operation limit of {cap} USD")
     card = await service.get_owned_card(payload.cardNo, customer["owner_id"])
     card_type = await service.find_card_type(card.get("card_type_id"))
-    quote = pricing.quote_debit(payload.amount, **pricing.card_type_fees(card_type))
+    quote = pricing.quote_debit(payload.amount, margin_pct=partners.margin_pct(tenant), **pricing.card_type_fees(card_type))
     return await service.card_operation(
         customer["owner_id"], build_order_no("DEP", customer["owner_id"], key), "DEPOSIT", payload.cardNo,
         wasabi.deposit, payload.amount,
@@ -247,7 +266,8 @@ async def quote(kind: str = Query(..., pattern="^(issue|deposit)$"), amount: str
     card_type = await service.find_card_type(cardTypeId)
     if not card_type or str(card_type.get("status", "")).lower() != "online":
         raise HTTPException(422, "Card type is not available")
-    q = (pricing.quote_issue(usd, card_type) if kind == "issue"
-         else pricing.quote_debit(usd, **pricing.card_type_fees(card_type)))
+    margin = partners.margin_pct(tenant)
+    q = (pricing.quote_issue(usd, card_type, margin) if kind == "issue"
+         else pricing.quote_debit(usd, margin_pct=margin, **pricing.card_type_fees(card_type)))
     return {"kind": kind, "usd": str(usd), "kes": str(ledger.from_minor(q["kes_minor"])),
             "cardFeeUsd": q.get("provider_fee_usd") if kind == "issue" else None}

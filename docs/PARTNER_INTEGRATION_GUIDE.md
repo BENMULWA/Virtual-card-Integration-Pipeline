@@ -22,7 +22,7 @@ curl https://payments.mamlakapsp.com/api/v1/partner/balance -H "X-API-Key: $MAML
 
 ## 3. The customer journey
 
-**Step 1 - Fund your float.** Cards are paid for from your prepaid float (KES), held with Mamlaka. Check it with `GET /balance`. A $10 card costs about 1,554 KES (10 USD load + 2 USD card fee at the current rate).
+**Step 1 - Fund your float.** Cards are paid for from your prepaid float (KES), held with Mamlaka. Check it with `GET /balance`. `GET /rates` returns your rate (KES per USD) and the card fees; a new $10 card costs 12 USD (10 USD load + 2 USD card fee) at that rate. Before each operation, `GET /quote` gives the exact KES it will take. Price your own customer from the quote plus your margin, so a change in our rate never leaves you out of pocket.
 
 **Step 2 - Create the customer.**
 `POST /customers` with `externalId`, `fullName`, `email`, `phone`. Repeating the same `externalId` returns the existing customer.

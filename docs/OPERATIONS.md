@@ -38,6 +38,26 @@ What the service does on its own:
 
 You top up the Wasabi merchant wallet from the Wasabi dashboard (the merchant wallet is funded with crypto deposits per coin and chain).
 
+## Pricing and margins
+
+Every card price is built the same way:
+
+```
+our cost of 1 USD = FX_KES_PER_USD / (1 - WASABI_DEPOSIT_FEE_PCT/100)      e.g. 129.50 / 0.985 = 131.47
+cost of an operation = USD amount (+ Wasabi's card fee and any Wasabi load fee) x our cost of 1 USD
+price = cost x (1 + margin)       margin = FX_SPREAD_PCT (own app) | the reseller's margin (default PARTNER_MARGIN_PCT)
+```
+
+Wasabi's own fees are always treated as **cost**; your margin is added on top, never replaced by them.
+
+```bash
+.venv/bin/python tests/resellers_keys.py pricing                     # the rate card, per reseller
+.venv/bin/python tests/resellers_keys.py set-margin --slug jasiri --pct 1.0
+.venv/bin/python tests/resellers_keys.py earnings --days 30          # margin kept on settled operations
+```
+
+Change `FX_KES_PER_USD` whenever your USDT price moves (then `docker compose up -d`). Resellers see their rate at `GET /api/v1/partner/rates` and the exact charge at `GET /api/v1/partner/quote`. Operations priced before margins were recorded do not appear in `earnings`.
+
 ## Administering resellers
 
 All reseller administration is one script, run on the server from the project folder:
@@ -55,6 +75,9 @@ All reseller administration is one script, run on the server from the project fo
 | 5 | `list` | List resellers |
 | 6 | `set-webhook --slug comet --url https://...` | Set or change where we send their events |
 | 7 | `treasury` | The treasury report above |
+| 8 | `pricing` | Your cost of a dollar and the rate each reseller pays |
+| 9 | `set-margin --slug comet --pct 1.5` | Your margin on one reseller (blank resets to `PARTNER_MARGIN_PCT`) |
+| 10 | `earnings --days 30` | Margin kept on settled card operations |
 
 Notes:
 

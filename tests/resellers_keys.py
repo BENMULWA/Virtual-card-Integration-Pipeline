@@ -1,7 +1,8 @@
 """
 Reseller credentials helper.   Run (from the app folder):   .venv/bin/python tests/resellers_keys.py
 
-Menu: create a reseller (generates its API key), regenerate a key, fund a float, check a balance, list resellers.
+Menu: create a reseller (generates its API key), regenerate a key, fund a float, check a balance, list resellers,
+set a reseller's margin, and see pricing and earnings.
 Uses this project's .env, so it talks to the same database as the API.
 Direct use also works:   python tests/resellers_keys.py create-tenant --name Comet --slug comet
 """
@@ -27,6 +28,9 @@ MENU = """
   5) List resellers
   6) Set / change a reseller's webhook URL
   7) Treasury: real Wasabi USD vs partner floats
+  8) Pricing: our cost of a dollar and the rate each reseller pays
+  9) Set a reseller's margin
+  10) Earnings: margin kept on card operations
   q) Quit
 """
 
@@ -37,7 +41,7 @@ def ask(prompt: str) -> str:
 
 def run(**args):
     defaults = dict(name=None, slug=None, webhook_url=None, card_types=None, max_amount=None,
-                    amount_kes=None, ref=None, url=None)
+                    amount_kes=None, ref=None, url=None, pct=None, days=30)
     asyncio.run(cli.run(Namespace(**{**defaults, **args})))
 
 
@@ -69,6 +73,13 @@ def main():
                 run(cmd="set-webhook", slug=ask("Reseller slug: "), url=ask("Webhook URL (https://..., blank clears it): ") or None)
             elif choice == "7":
                 run(cmd="treasury")
+            elif choice == "8":
+                run(cmd="pricing")
+            elif choice == "9":
+                run(cmd="set-margin", slug=ask("Reseller slug: "),
+                    pct=ask("Margin in percent, e.g. 1.5 (blank = default): ") or None)
+            elif choice == "10":
+                run(cmd="earnings", days=int(ask("Last how many days? [30] ") or 30))
             elif choice == "q":
                 return
             else:

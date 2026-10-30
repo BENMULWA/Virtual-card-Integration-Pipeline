@@ -89,7 +89,8 @@ Copy `.env.example` to `.env`. The settings that matter most:
 | `RSA_PRIVATE_KEY_PATH`, `RSA_PUBLIC_KEY_PATH`, `WASABI_PUBLIC_KEY_PATH` | Key locations inside the container (compose sets `app/keys/...`). |
 | `LIVE_MONEY_ENABLED` | Must be `true` before card creation, deposits and withdrawals work. |
 | `MAX_SINGLE_AMOUNT` | Per-operation cap in USD (default 500). |
-| `FX_KES_PER_USD`, `FX_SPREAD_PCT` | The KES to USD rate and your margin. Funding is off while the rate is empty. No feed is wired in: keep it current. |
+| `FX_KES_PER_USD`, `WASABI_DEPOSIT_FEE_PCT` | What you pay per USDT, and the share Wasabi keeps on each deposit (1.5% on USDT TRC20). Together they give your cost of a dollar. Funding is off while the rate is empty. No feed is wired in: keep it current. |
+| `FX_SPREAD_PCT`, `PARTNER_MARGIN_PCT` | Your margin on top of cost: to your own app's customers, and to resellers by default (override per reseller with `set-margin`). See [OPERATIONS.md](OPERATIONS.md#pricing-and-margins). |
 | `ALLOWED_CARD_TYPE_IDS` | Card types that may be registered and issued (default `111078`). |
 | `ENABLE_WEBHOOK_SIGNATURE_VALIDATION` | See section 6. |
 | `TRUST_PROXY_HEADERS` | `true` behind nginx (compose sets it) so rate limits use the real client IP. |

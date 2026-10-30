@@ -291,7 +291,7 @@ async def refresh_holder(holder_id: int) -> Optional[dict]:
 # CARD CREATION
 # =========================================================
 async def issue_card(owner_id: str, order_no: str, req, funding_owner: Optional[str] = None,
-                     insufficient_detail: Optional[str] = None) -> dict:
+                     insufficient_detail: Optional[str] = None, margin_pct: Optional[Decimal] = None) -> dict:
     require_allowed_card_type(req.cardTypeId)
     require_funding_enabled(req.amount)
 
@@ -320,7 +320,7 @@ async def issue_card(owner_id: str, order_no: str, req, funding_owner: Optional[
             )
         holder_id = req.holderId
 
-    quote = pricing.quote_issue(req.amount, card_type)  # raises 503 if no FX rate is configured
+    quote = pricing.quote_issue(req.amount, card_type, margin_pct)  # raises 503 if no FX rate is configured
     if not await ops.get_operation(order_no):  # a replay of an existing operation must still return its state
         await treasury.require_balance(req.amount + Decimal(quote.get("provider_fee_usd") or 0))
     funding = {"kind": "debit", "kes_minor": quote["kes_minor"], "quote": quote}

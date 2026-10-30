@@ -47,6 +47,8 @@ os.environ.update({
     "WASABI_TIMEOUT_SECONDS": "5",
     "FX_KES_PER_USD": "130",
     "FX_SPREAD_PCT": "2",
+    "WASABI_DEPOSIT_FEE_PCT": "0",   # pricing tests that need the deposit fee set it themselves
+    "PARTNER_MARGIN_PCT": "2",
     "CARD_FUNDING_FEE_KES": "0",
     "MPESA_BASE_URL": "https://daraja.test",
     "MPESA_CONSUMER_KEY": "ck", "MPESA_CONSUMER_SECRET": "cs",

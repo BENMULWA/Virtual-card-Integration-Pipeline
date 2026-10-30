@@ -363,3 +363,30 @@ async def test_card_leaves_pending_without_the_webhook(api, comet, wasabi, monke
         {"card_no": "C1"}, {"$set": {"status": "pending", "created_at": datetime.utcnow() - timedelta(minutes=5)}})
     assert (await reconcile.run_once())["cards"] == 1
     assert (await database.cards_collection.find_one({"card_no": "C1"}))["status"] == "Normal"
+
+
+async def test_each_reseller_can_have_its_own_margin(api, comet, wasabi):
+    tenant, headers = comet
+    default = (await api.get("/api/v1/partner/quote?kind=deposit&amount=10&cardTypeId=8", headers=headers)).json()
+    assert default["kes"] == "1326.00"                                    # 10 * 130 * 1.02 (PARTNER_MARGIN_PCT)
+    await partners.set_margin(tenant["slug"], "0.5")
+    cheaper = (await api.get("/api/v1/partner/quote?kind=deposit&amount=10&cardTypeId=8", headers=headers)).json()
+    assert cheaper["kes"] == "1306.50"
+    rates = (await api.get("/api/v1/partner/rates", headers=headers)).json()
+    assert rates["kesPerUsd"] == "130.65" and rates["currency"] == "KES"
+
+    await customer(api, headers)                                          # issuance charges the same margin
+    await ledger.credit(partners.float_owner(tenant["tenant_id"]), 500_000, ref="bank-m", kind="float_topup")
+    await api.post("/api/v1/partner/customers/u-1/cards", headers={**headers, **idem("margin-key-01")},
+                   json={"cardTypeId": 8, "amount": "10"})
+    issue = (await api.get("/api/v1/partner/quote?kind=issue&amount=10&cardTypeId=8", headers=headers)).json()
+    assert str((await float_of(tenant))[1]) == issue["kes"]
+
+    await partners.set_margin(tenant["slug"], None)                       # cleared: back to the default
+    again = (await api.get("/api/v1/partner/quote?kind=deposit&amount=10&cardTypeId=8", headers=headers)).json()
+    assert again["kes"] == "1326.00"
+    for bad in ("abc", "-1", "25"):
+        with pytest.raises(ValueError):
+            await partners.set_margin(tenant["slug"], bad)
+    with pytest.raises(ValueError):
+        await partners.set_margin("nobody", "1")
