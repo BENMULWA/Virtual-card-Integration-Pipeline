@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MHS Virtual Cards - Partner Integration Guide</title>
+<style>
+  :root {
+    --navy: #1e2047;
+    --accent: #5b4ff5;
+    --accent-soft: #eeecff;
+    --ink: #1f2330;
+    --muted: #5d6475;
+    --line: #e3e5ec;
+    --row: #f6f7fb;
+    --warn-bg: #fff5e6;
+    --warn: #b7791f;
+    --ok-bg: #e8f6f1;
+    --ok: #1f8a6b;
+    --code-bg: #f3f4f8;
+  }
+  @page {
+    size: A4; margin: 18mm 16mm 18mm;
+    @top-left { content: "MHS VIRTUAL CARDS"; font: 700 7.5pt Arial, sans-serif; color: #1e2047; letter-spacing: .03em;
+                vertical-align: bottom; padding-bottom: 3mm; border-bottom: 1px solid #e3e5ec; }
+    @top-right { content: "Partner Integration Guide"; font: 7.5pt Arial, sans-serif; color: #5d6475;
+                 vertical-align: bottom; padding-bottom: 3mm; border-bottom: 1px solid #e3e5ec; }
+    @bottom-left { content: "Powered by the Mamlaka Partner API  \00b7  Version {{VERSION}}"; font: 7.5pt Arial, sans-serif; color: #5d6475;
+                   vertical-align: top; padding-top: 3mm; border-top: 1px solid #e3e5ec; }
+    @bottom-right { content: "Page " counter(page); font: 7.5pt Arial, sans-serif; color: #5d6475;
+                    vertical-align: top; padding-top: 3mm; border-top: 1px solid #e3e5ec; }
+  }
+  @page :first { margin: 0; @top-left { content: none; } @top-right { content: none; }
+                 @bottom-left { content: none; } @bottom-right { content: none; } }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; color: var(--ink); font: 10pt/1.45 "Helvetica Neue", Arial, sans-serif; background: #fff; }
+
+
+  /* cover */
+  .cover { position: relative; height: 297mm; background: var(--navy); color: #fff; padding: 28mm 20mm; page-break-after: always; overflow: hidden; z-index: 2; }
+  .cover .eyebrow { color: #a99cff; font-weight: 700; font-size: 10.5pt; letter-spacing: .04em; text-transform: uppercase; }
+  .cover .orb { position: absolute; right: 30mm; top: 48mm; width: 20mm; height: 20mm; border-radius: 50%; background: #8b80ff; }
+  .cover .orb::after { content: ""; position: absolute; inset: 5mm; border-radius: 50%; background: #fff; }
+  .cover .trail { position: absolute; right: 44mm; top: 64mm; width: 160mm; height: 2px; transform-origin: right center; transform: rotate(-38deg);
+                  background: linear-gradient(to left, rgba(91,79,245,.9), rgba(91,79,245,0)); }
+  .cover h1 { position: absolute; left: 20mm; right: 20mm; top: 160mm; margin: 0; font-size: 34pt; line-height: 1.15; }
+  .cover .sub { position: absolute; left: 20mm; right: 40mm; top: 205mm; font-size: 13pt; color: #c9cbe0; }
+  .cover .bar { position: absolute; left: 20mm; top: 228mm; width: 28mm; height: 3px; background: var(--accent); }
+  .cover .meta { position: absolute; left: 20mm; bottom: 22mm; font-size: 9.5pt; color: #a9abc6; line-height: 1.7; }
+
+  h2 { color: var(--navy); font-size: 19pt; margin: 0 0 3mm; page-break-after: avoid; }
+  h3 { color: var(--navy); font-size: 12pt; margin: 5mm 0 2mm; page-break-after: avoid; }
+  section { page-break-before: always; }
+  section.flow { page-break-before: auto; margin-top: 8mm; }
+  p { margin: 0 0 3mm; }
+  ul { margin: 0 0 3mm; padding-left: 5mm; }
+  li { margin-bottom: 1mm; }
+  code { font-family: "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 8.8pt; color: var(--accent); }
+  pre { background: var(--code-bg); border-left: 3px solid var(--accent); padding: 3mm 4mm; margin: 0 0 4mm; white-space: pre-wrap; word-break: break-word;
+        font: 8.6pt/1.45 "DejaVu Sans Mono", Menlo, Consolas, monospace; color: var(--ink); page-break-inside: avoid; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 3.5mm; font-size: 9pt; page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+  th { background: var(--navy); color: #fff; text-align: left; padding: 1.6mm 2.5mm; font-weight: 600; }
+  td { padding: 1.4mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:nth-child(even) td { background: var(--row); }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .endpoint { display: flex; margin: 2mm 0 3mm; background: var(--code-bg); page-break-inside: avoid; page-break-after: avoid; }
+  .endpoint .m { color: #fff; font-weight: 700; font-size: 8.5pt; width: 17mm; text-align: center; padding: 2mm 0; }
+  .endpoint .p { padding: 2mm 3mm; font: 9pt "DejaVu Sans Mono", Menlo, Consolas, monospace; }
+  .GET { background: #17a589; } .POST { background: var(--accent); } .PUT { background: #c27c1a; }
+  .callout { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 3mm 4mm; margin: 0 0 4mm; page-break-inside: avoid; }
+  .callout.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .callout.ok { border-color: var(--ok); background: var(--ok-bg); }
+  .callout b:first-child { color: var(--accent); margin-right: 1mm; }
+  .callout.warn b:first-child { color: var(--warn); }
+  .callout.ok b:first-child { color: var(--ok); }
+  .step { display: flex; align-items: center; gap: 3mm; margin: 5mm 0 2mm; page-break-after: avoid; }
+  .step .n { width: 7mm; height: 7mm; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 10pt;
+             display: flex; align-items: center; justify-content: center; flex: none; }
+  .step h3 { margin: 0; }
+  .glance td:first-child { width: 8mm; background: var(--accent) !important; color: #fff; font-weight: 700; text-align: center; }
+  .glance td:nth-child(2) { font-weight: 600; width: 46mm; }
+  .toc { list-style: none; padding: 0; margin: 4mm 0; }
+  .toc li { display: flex; padding: 2.5mm 0; border-bottom: 1px dotted #c4c7d3; font-size: 11pt; }
+  .toc li span:first-child { width: 10mm; color: var(--accent); font-weight: 700; }
+  .check td:first-child { width: 7mm; color: var(--accent); }
+  .small { font-size: 8.5pt; color: var(--muted); }
+  .version { margin-top: 8mm; font-size: 9pt; color: var(--muted); }
+</style>
+</head>
+<body>
+
+
+<!-- ============================================================ cover -->
+<div class="cover">
+  <div class="eyebrow">MHS Virtual Cards</div>
+  <div class="trail"></div><div class="orb"></div>
+  <h1>Partner<br>Integration Guide</h1>
+  <div class="sub">Issuing Mastercard virtual cards to your customers through the Mamlaka Partner API</div>
+  <div class="bar"></div>
+  <div class="meta">Developer documentation &middot; {{DATE}} &middot; Version {{VERSION}}<br>
+    For partner engineering and operations teams</div>
+</div>
+
+<!-- ============================================================ contents -->
+<section style="page-break-before: auto">
+  <h2>Contents</h2>
+  <ol class="toc">
+    <li><span>1</span>Overview</li>
+    <li><span>2</span>Getting started</li>
+    <li><span>3</span>Pricing and your float</li>
+    <li><span>4</span>Rules for every call</li>
+    <li><span>5</span>The customer journey</li>
+    <li><span>6</span>Webhooks</li>
+    <li><span>7</span>Good practice</li>
+    <li><span>8</span>Limits and what is not available</li>
+    <li><span>A</span>Appendix: endpoint reference</li>
+    <li><span>B</span>Go-live checklist</li>
+  </ol>
+  <p class="version">Version {{VERSION}}, {{DATE}}. This version reflects the live API at <code>{{BASE_URL}}</code>. It replaces earlier versions of this guide;
+    in particular, the base URL and prices in earlier versions are no longer valid.</p>
+</section>
+
+<!-- ============================================================ 1 -->
+<section>
+  <h2>1. Overview</h2>
+  <p>MHS Virtual Cards lets your platform issue virtual Mastercards (USD) to your own customers through the Mamlaka Partner API.
+    Mamlaka handles KYC submission, card issuance and card operations; you keep the customer relationship, the app experience and the
+    customer records.</p>
+  <p>This guide is for the engineers who build and run the integration, and for the operations staff who support customers through
+    onboarding. It covers credentials, pricing, the rules every request must follow, the full customer journey from sign-up to an
+    active card, webhooks, and good operating practice.</p>
+
+  <h3>Who does what</h3>
+  <table>
+    <thead><tr><th></th><th>You (the partner)</th><th>Mamlaka</th></tr></thead>
+    <tbody>
+      <tr><td>Customer relationship</td><td>Owns the customer, the app and support</td><td>Not customer-facing</td></tr>
+      <tr><td>Identity data</td><td>Collects details and ID photos from the customer</td><td>Submits KYC to the card processor (Wasabi)</td></tr>
+      <tr><td>Funding</td><td>Keeps the prepaid KES float topped up</td><td>Debits the float for card loads and fees</td></tr>
+      <tr><td>Pricing</td><td>Sets the price your customers pay</td><td>Publishes the rate and the exact cost of each operation</td></tr>
+      <tr><td>Cards</td><td>Requests cards, deposits, freezes</td><td>Issues and operates the cards</td></tr>
+      <tr><td>Status updates</td><td>Receives webhooks, updates the app</td><td>Sends signed webhooks</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The journey at a glance</h3>
+  <table class="glance">
+    <tbody>
+      <tr><td>1</td><td>Fund the float</td><td>Keep enough KES with Mamlaka to cover card loads and fees.</td></tr>
+      <tr><td>2</td><td>Create the customer</td><td>Register the customer with your own customer id.</td></tr>
+      <tr><td>3</td><td>Upload KYC documents</td><td>ID front, ID back and a selfie holding the ID.</td></tr>
+      <tr><td>4</td><td>Submit KYC</td><td>Send the cardholder details and the three file ids.</td></tr>
+      <tr><td>5</td><td>Wait for the decision</td><td>Usually a few hours; webhook or polling.</td></tr>
+      <tr><td>6</td><td>Fix and resubmit</td><td>Only if rejected.</td></tr>
+      <tr><td>7</td><td>Issue the card</td><td>Check the price with a quote, then issue with an opening load of at least 10 USD.</td></tr>
+      <tr><td>8</td><td>Manage cards</td><td>List, check balance, deposit, freeze, unfreeze{{DETAILS_GLANCE}}.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================ 2 -->
+<section>
+  <h2>2. Getting started</h2>
+  <h3>Base URL</h3>
+  <pre>{{BASE_URL}}</pre>
+
+  <h3>Credentials</h3>
+  <p>Mamlaka issues you two secrets, sent separately over private channels. Store both in your server-side secrets manager,
+    never in source control.</p>
+  <table>
+    <thead><tr><th>Secret</th><th>Format</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td>API key</td><td><code>mk_live_...</code></td><td>Authenticating every API request</td></tr>
+      <tr><td>Webhook secret</td><td><code>whsec_...</code></td><td>Verifying that webhooks really come from Mamlaka</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Authenticating requests</h3>
+  <p>Send the API key in the <code>X-API-Key</code> header on every request:</p>
+  <pre>curl {{BASE_URL}}/balance \
+  -H "X-API-Key: $MAMLAKA_API_KEY"</pre>
+  <ul>
+    <li>Call the API from your <b>backend only</b>. The key must never be shipped in a mobile app or in browser code.</li>
+    <li>A wrong or missing key returns <code>401</code>.</li>
+    <li>The rate limit is <b>600 requests per minute</b>; above it you receive <code>429</code>.</li>
+  </ul>
+  <div class="callout warn"><b>Key compromised?</b> If the API key is lost or leaked, ask Mamlaka to regenerate it. The old key stops
+    working immediately, so deploy the new key to all backend services straight away.</div>
+
+  <h3>Check your access</h3>
+  <pre>curl {{BASE_URL}}/balance -H "X-API-Key: $MAMLAKA_API_KEY"
+{"currency": "KES", "available": "0.00", "held": "0.00"}
+
+curl {{BASE_URL}}/rates -H "X-API-Key: $MAMLAKA_API_KEY"
+{"currency": "KES", "kesPerUsd": "{{RATE}}",
+ "cardTypes": [{"cardTypeId": 111078, "cardFeeUsd": "2", "depositFeePct": "0",
+                "depositFixedFeeUsd": "0", "minOpeningUsd": "10", "minDepositUsd": "1"}]}</pre>
+</section>
+
+<!-- ============================================================ 3 -->
+<section>
+  <h2>3. Pricing and your float</h2>
+  <p>Cards are paid for in USD at the card processor. Mamlaka sells you those dollars in KES at your rate, and debits the KES from
+    your prepaid float.</p>
+
+  <h3>Your rate card</h3>
+  <table>
+    <thead><tr><th>Item</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Rate</td><td><b>KES {{RATE}} per USD</b> loaded onto a card: standard rate as at {{DATE}}. Your account's rate is returned by <code>GET /rates</code></td></tr>
+      <tr><td>Card issuance fee</td><td>USD 2.00 per card, charged at the same rate</td></tr>
+      <tr><td>Fee on deposits</td><td>None</td></tr>
+      <tr><td>Minimum opening load</td><td>USD 10 (set by the card issuer; a card cannot be created empty)</td></tr>
+      <tr><td>Minimum deposit</td><td>USD 1</td></tr>
+      <tr><td>Maximum per operation</td><td>USD {{MAX_USD}}, or the limit agreed for your account</td></tr>
+      <tr><td>Float currency</td><td>KES</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Worked examples</h3>
+  <table>
+    <thead><tr><th>Operation</th><th class="num">USD charged</th><th class="num">Debited from your float (KES)</th></tr></thead>
+    <tbody>
+{{EXAMPLE_ROWS}}
+    </tbody>
+  </table>
+  <div class="callout"><b>The rate moves.</b> It follows the USD market and can differ per account, so treat the figures above as indicative. Always call
+    <code>GET /rates</code> for the current rate and <code>GET /quote</code> for the exact KES of an operation, and price your own customer
+    from the quote plus your margin. A rate change on our side then never leaves you out of pocket.</div>
+
+  <h3>Getting an exact quote</h3>
+  <div class="endpoint"><span class="m GET">GET</span><span class="p">/quote?kind=issue|deposit&amp;amount=10&amp;cardTypeId=111078</span></div>
+  <pre>{"kind": "issue", "usd": "10.00", "kes": "{{QUOTE_ISSUE_10}}", "cardFeeUsd": "2"}</pre>
+  <p><code>kind=issue</code> includes the card fee; <code>kind=deposit</code> is the load only.</p>
+
+  <h3>Funding the float</h3>
+  <ol>
+    <li>Pay Mamlaka in KES by bank transfer or M-Pesa.</li>
+    <li>Send Mamlaka the payment reference.</li>
+    <li>Mamlaka credits your float once the payment has arrived; each reference can be credited only once.</li>
+  </ol>
+  <div class="endpoint"><span class="m GET">GET</span><span class="p">/balance</span></div>
+  <p><code>available</code> is what you can spend. <code>held</code> is reserved for operations still in progress: it is charged if the
+    operation succeeds and returned to <code>available</code> if it fails. If the float cannot cover an operation, you receive
+    <code>402</code> and nothing is sent to the card processor.</p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section class="flow">
+  <h2>4. Rules for every call</h2>
+  <h3>Idempotency</h3>
+  <p>Requests that create or move something carry an <code>Idempotency-Key</code> header of 8 to 64 characters. Sending the same request
+    again with the same key never repeats the action, which makes retries after a timeout safe.</p>
+  <ul>
+    <li><b>Required</b> on: KYC submit and resubmit, card issuance, deposit, freeze and unfreeze. You may send one on any other
+      request; it is ignored there. (Customer creation is already safe to repeat: it is idempotent on <code>externalId</code>.)</li>
+    <li>Generate <b>one key per business action</b> (for example, one per card issuance or one per deposit).</li>
+    <li>When retrying, <b>reuse the same key</b>. A new key means a new action, which could issue a second card or move money twice.</li>
+    <li>Store the key alongside the action in your database <b>before</b> sending the request.</li>
+  </ul>
+
+  <h3>Identifiers and amounts</h3>
+  <ul>
+    <li>Customers are identified by <b>your own customer id</b>, sent as <code>externalId</code> and used in URL paths. You never handle
+      Mamlaka's internal customer ids.</li>
+    <li>Card amounts are USD strings with at most two decimals, for example <code>"10"</code> or <code>"10.50"</code>. Your float is in KES.</li>
+    <li>Every operation returns a <code>merchantOrderNo</code>: your <b>reference</b> for that operation. Store it.</li>
+  </ul>
+
+  <h3>Operation outcomes</h3>
+  <table>
+    <thead><tr><th>status</th><th>Meaning</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td><code>SUCCESS</code></td><td>Done</td><td>Settle with your customer</td></tr>
+      <tr><td><code>PENDING</code></td><td>Accepted, being processed</td><td>Wait for <code>operation.updated</code>, or poll <code>GET /operations/{reference}?refresh=true</code></td></tr>
+      <tr><td><code>UNKNOWN</code> (HTTP <code>202</code>)</td><td>The outcome could not be confirmed yet</td><td>Hold your customer's money. Retry with the <b>same</b> key, or poll the operation</td></tr>
+      <tr><td><code>FAILED</code></td><td>Refused; your float is not charged</td><td>Refund your customer</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><b>Never assume failure.</b> On a timeout, a network error or any <code>5xx</code>, the operation may still
+    have happened. Do not refund your customer and do not retry with a new key: retry with the <b>same</b> key, or read
+    <code>GET /operations/{reference}?refresh=true</code>. Refund only on a definitive refusal (<code>4xx</code>) or a final <code>FAILED</code>.</div>
+
+  <h3>Error codes</h3>
+  <table>
+    <thead><tr><th>Status</th><th>Meaning</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td><code>401</code></td><td>Bad or missing API key</td><td>Check the key configured on the server</td></tr>
+      <tr><td><code>402</code></td><td>Float too low</td><td>Top up the float, then retry with the same Idempotency-Key</td></tr>
+      <tr><td><code>403</code></td><td>Not enabled for your account (e.g. a card type)</td><td>Contact Mamlaka</td></tr>
+      <tr><td><code>404</code></td><td>Unknown customer, card or operation</td><td>Check the <code>externalId</code> / <code>cardNo</code>; create the customer first</td></tr>
+      <tr><td><code>409</code></td><td>Wrong state, e.g. the customer's KYC is not approved yet</td><td>Wait for approval, then retry</td></tr>
+      <tr><td><code>413</code> / <code>415</code></td><td>Upload too large (over 2 MB) / wrong file type</td><td>Compress, or send JPG, PNG or PDF</td></tr>
+      <tr><td><code>422</code></td><td>Invalid input, over your per-operation limit, or refused by the card processor
+        (<code>{"detail": {"code", "message"}}</code>)</td><td>Fix the request; do not retry unchanged</td></tr>
+      <tr><td><code>429</code></td><td>Too many requests</td><td>Back off and retry (limit: 600/min)</td></tr>
+      <tr><td><code>502</code></td><td>The card processor did not accept an upload</td><td>Retry the upload</td></tr>
+      <tr><td><code>503</code></td><td>Temporarily unavailable; nothing was charged</td><td>Retry later with the same Idempotency-Key</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================ 5 -->
+<section>
+  <h2>5. The customer journey</h2>
+  <p>Follow these steps in order to take a customer from sign-up to an active virtual card.</p>
+
+  <div class="step"><span class="n">1</span><h3>Fund the float</h3></div>
+  <p>Keep enough KES in your float for the cards you expect to issue (see section 3). Check it with <code>GET /balance</code> and alert
+    your finance team before it runs low.</p>
+
+  <div class="step"><span class="n">2</span><h3>Create the customer</h3></div>
+  <div class="endpoint"><span class="m POST">POST</span><span class="p">/customers</span></div>
+  <table>
+    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>externalId</code></td><td>Your own customer id</td></tr>
+      <tr><td><code>fullName</code></td><td>Customer's full name</td></tr>
+      <tr><td><code>email</code></td><td>Customer's email address</td></tr>
+      <tr><td><code>phone</code></td><td>Customer's phone number</td></tr>
+    </tbody>
+  </table>
+  <pre>curl -X POST {{BASE_URL}}/customers \
+  -H "X-API-Key: $MAMLAKA_API_KEY" -H "Content-Type: application/json" \
+  -d '{"externalId": "C10482", "fullName": "Jane Wanjiru Mwangi",
+       "email": "jane@example.com", "phone": "+254700000000"}'
+
+{"externalId": "C10482", "fullName": "Jane Wanjiru Mwangi", "email": "jane@example.com",
+ "phone": "+254700000000", "createdAt": "...", "created": true}</pre>
+  <p class="small">Illustrative values. Sending the same <code>externalId</code> again returns the existing customer with
+    <code>"created": false</code>. Read a customer back with <code>GET /customers/{externalId}</code>.</p>
+
+  <div class="step"><span class="n">3</span><h3>Upload the KYC documents</h3></div>
+  <div class="endpoint"><span class="m POST">POST</span><span class="p">/customers/{externalId}/kyc/documents</span></div>
+  <p>A multipart request with a <code>file</code> part and a <code>kind</code> part. Upload each document separately.</p>
+  <table>
+    <thead><tr><th>kind</th><th>Document</th></tr></thead>
+    <tbody>
+      <tr><td><code>front</code></td><td>Front of the ID</td></tr>
+      <tr><td><code>back</code></td><td>Back of the ID (not needed for a passport)</td></tr>
+      <tr><td><code>selfie</code></td><td>The customer holding their ID</td></tr>
+    </tbody>
+  </table>
+  <pre>curl -X POST {{BASE_URL}}/customers/C10482/kyc/documents \
+  -H "X-API-Key: $MAMLAKA_API_KEY" -F "kind=front" -F "file=@id_front.jpg"
+
+{"kind": "front", "fileId": "..."}</pre>
+  <ul>
+    <li>Accepted formats: JPG, PNG or PDF, <b>max 2 MB each</b>. Compress large phone photos in your app before upload.</li>
+    <li>Each upload returns a <code>fileId</code>. Keep all three; they are needed in the next step.</li>
+  </ul>
+
+  <div class="step"><span class="n">4</span><h3>Submit KYC</h3></div>
+  <div class="endpoint"><span class="m POST">POST</span><span class="p">/customers/{externalId}/kyc</span></div>
+  <p>Send the cardholder details and the file ids from step 3, with an <code>Idempotency-Key</code>.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>cardTypeId</code></td><td>Card type. Mastercard Virtual (USD) is <code>111078</code></td></tr>
+      <tr><td><code>areaCode</code>, <code>mobile</code></td><td>Phone area code and mobile number</td></tr>
+      <tr><td><code>email</code></td><td>Cardholder email. <b>Must be unique</b> across cardholders</td></tr>
+      <tr><td><code>firstName</code>, <code>lastName</code></td><td>Exactly as on the ID; together at most 32 characters. Put a middle name in <code>firstName</code></td></tr>
+      <tr><td><code>birthday</code></td><td>Date of birth, <code>YYYY-MM-DD</code></td></tr>
+      <tr><td><code>nationality</code>, <code>country</code></td><td>Nationality and country of residence</td></tr>
+      <tr><td><code>town</code>, <code>address</code></td><td>Letters, numbers, hyphens and spaces only</td></tr>
+      <tr><td><code>postCode</code></td><td>Postal code</td></tr>
+      <tr><td><code>gender</code></td><td><code>M</code> or <code>F</code></td></tr>
+      <tr><td><code>idType</code></td><td><code>GOVERNMENT_ISSUED_ID_CARD</code>, <code>DLN</code>, <code>PASSPORT</code> or <code>HK_HKID</code></td></tr>
+      <tr><td><code>idNumber</code></td><td>ID number, exactly as on the ID</td></tr>
+      <tr><td><code>issueDate</code></td><td>Date of issue, <code>YYYY-MM-DD</code>, exactly as on the ID</td></tr>
+      <tr><td><code>idNoExpiryDate</code></td><td>ID expiry information</td></tr>
+      <tr><td><code>idFrontId</code></td><td><code>fileId</code> of the front upload</td></tr>
+      <tr><td><code>idBackId</code></td><td><code>fileId</code> of the back upload (not needed for a passport)</td></tr>
+      <tr><td><code>idHoldId</code></td><td><code>fileId</code> of the selfie upload</td></tr>
+      <tr><td><code>occupation</code>, <code>annualSalary</code>, <code>accountPurpose</code>, <code>expectedMonthlyVolume</code></td><td>Optional</td></tr>
+    </tbody>
+  </table>
+  <pre>{"merchantOrderNo": "HLD...", "status": "PENDING", "data": {"holderId": 900123, ...}}</pre>
+  <p>Save the <code>holderId</code> against your <code>externalId</code>: you need it to issue cards.</p>
+  <div class="callout warn"><b>Most common rejection</b> A wrong <b>date of issue</b> or a <b>missing middle name</b>. Names, ID number and
+    date of issue must match the ID exactly. Show the customer their ID photo next to these fields so they can check before submitting.</div>
+  <div class="callout"><b>Unique email</b> An email already registered for a cardholder is rejected with "Email already exists". The card
+    processor sends the customer a verification code at this email, so it must be an address the customer can actually open.</div>
+  <div class="callout"><b>Customers outside Kenya</b> The card processor decides which countries and ID documents it accepts. Confirm
+    the countries you serve with Mamlaka before onboarding customers there.</div>
+
+  <div class="step"><span class="n">5</span><h3>Wait for the decision</h3></div>
+  <p>A decision usually takes <b>a few hours</b>. You receive a <code>kyc.status_changed</code> webhook, or can poll:</p>
+  <div class="endpoint"><span class="m GET">GET</span><span class="p">/customers/{externalId}/kyc?refresh=true</span></div>
+  <table>
+    <thead><tr><th>Status</th><th>Meaning</th><th>Show in your app</th></tr></thead>
+    <tbody>
+      <tr><td><code>wait_audit</code> / <code>under_review</code></td><td>Waiting for review</td><td>"We're verifying your details"</td></tr>
+      <tr><td><code>pass_audit</code></td><td>Approved</td><td>Offer card creation</td></tr>
+      <tr><td><code>reject</code></td><td>Rejected; see <code>reason</code></td><td>Explain what to fix and let the customer resubmit</td></tr>
+    </tbody>
+  </table>
+  <div class="callout ok"><b>Once per person</b> KYC is done once per customer. An approved customer can hold more than one card
+    without repeating KYC.</div>
+
+  <div class="step"><span class="n">6</span><h3>If rejected, fix and resubmit</h3></div>
+  <div class="endpoint"><span class="m PUT">PUT</span><span class="p">/customers/{externalId}/kyc/{holderId}</span></div>
+  <p>Send the corrected details, with a new <code>Idempotency-Key</code>. Only a rejected application can be updated; do not resubmit one
+    that is still waiting.</p>
+
+  <div class="step"><span class="n">7</span><h3>Issue the card</h3></div>
+  <p>First get the exact cost: <code>GET /quote?kind=issue&amp;amount=10&amp;cardTypeId=111078</code>. Then:</p>
+  <div class="endpoint"><span class="m POST">POST</span><span class="p">/customers/{externalId}/cards</span></div>
+  <table>
+    <thead><tr><th>Field</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>cardTypeId</code></td><td><code>111078</code> for the Mastercard Virtual (USD) card</td></tr>
+      <tr><td><code>holderId</code></td><td>From the KYC response</td></tr>
+      <tr><td><code>amount</code></td><td>Opening load in USD, as a string (e.g. <code>"10"</code>). Minimum <b>10 USD</b>; maximum is your per-operation limit (USD {{MAX_USD}} by default)</td></tr>
+    </tbody>
+  </table>
+  <pre>{"merchantOrderNo": "CRD...", "status": "PENDING", "cardNo": "WB...", "data": {...}}</pre>
+  <ul>
+    <li>The total (load + card fee) is held from your float, then charged when the card processor confirms. If the float is too low
+      you receive <code>402</code> and nothing is sent.</li>
+    <li>Keep the <code>merchantOrderNo</code> (the operation) and the <code>cardNo</code> (the card).</li>
+    <li>The operation becomes final with an <code>operation.updated</code> webhook, usually within minutes. The card's status changes from
+      <code>pending</code> to active (<code>Normal</code>) and a <code>card.updated</code> webhook is sent.</li>
+  </ul>
+
+  <div class="step"><span class="n">8</span><h3>Manage cards</h3></div>
+  <table>
+    <thead><tr><th>Action</th><th>Endpoint</th><th>Body</th></tr></thead>
+    <tbody>
+      <tr><td>List the customer's cards</td><td><code>GET /customers/{externalId}/cards</code></td><td>None</td></tr>
+      <tr><td>Live card balance</td><td><code>GET .../cards/{cardNo}/balance</code></td><td>None</td></tr>
+      <tr><td>Add funds (from your float)</td><td><code>POST .../cards/deposit</code></td><td><code>{cardNo, amount}</code></td></tr>
+      <tr><td>Freeze a card</td><td><code>POST .../cards/freeze</code></td><td><code>{cardNo}</code></td></tr>
+      <tr><td>Unfreeze a card</td><td><code>POST .../cards/unfreeze</code></td><td><code>{cardNo}</code></td></tr>
+{{DETAILS_ROW}}
+      <tr><td>Outcome of an operation</td><td><code>GET /operations/{reference}?refresh=true</code></td><td>None</td></tr>
+    </tbody>
+  </table>
+  <p class="small"><code>...</code> stands for <code>/customers/{externalId}</code>. Every POST needs an <code>Idempotency-Key</code>.
+    A deposit is priced like an issuance without the card fee; check it with <code>GET /quote?kind=deposit</code>.</p>
+{{DETAILS_SECTION}}
+</section>
+
+<!-- ============================================================ 6 -->
+<section>
+  <h2>6. Webhooks</h2>
+  <p>Give Mamlaka an HTTPS endpoint on your backend. Mamlaka sends a <code>POST</code> with a JSON body:</p>
+  <pre>{"id": "...", "type": "operation.updated", "createdAt": "2026-10-30T12:00:00Z",
+ "data": {"reference": "CRD...", "type": "CREATE_CARD", "status": "SUCCESS", "customerId": "C10482"}}</pre>
+  <p>Headers: <code>X-Mamlaka-Signature</code> (see below) and <code>X-Mamlaka-Event-Id</code> (the same as <code>id</code>).</p>
+
+  <h3>Events</h3>
+  <table>
+    <thead><tr><th>Event</th><th>data fields</th><th>Your action</th></tr></thead>
+    <tbody>
+      <tr><td><code>kyc.status_changed</code></td><td><code>customerId</code>, <code>holderId</code>, <code>status</code>, <code>approved</code>, <code>reason</code></td>
+        <td>Update the customer's KYC state; save <code>holderId</code>; notify the customer</td></tr>
+      <tr><td><code>operation.updated</code></td><td><code>customerId</code>, <code>reference</code>, <code>type</code>, <code>status</code></td>
+        <td>An issuance or deposit is final (<code>SUCCESS</code> / <code>FAILED</code>): settle or refund your customer</td></tr>
+      <tr><td><code>card.updated</code></td><td><code>customerId</code>, <code>cardNo</code></td>
+        <td>Refresh the card list and show the new state</td></tr>
+    </tbody>
+  </table>
+  <p class="small"><code>type</code> in <code>operation.updated</code> is <code>CREATE_CARD</code>, <code>DEPOSIT</code>, <code>FREEZE</code> or <code>UNFREEZE</code>.</p>
+
+  <h3>Verify the signature</h3>
+  <p>The <code>X-Mamlaka-Signature</code> header has the form <code>sha256=&lt;hex&gt;</code>: the HMAC-SHA256 of the <b>raw request body</b>,
+    keyed with your webhook secret. Reject any request whose signature does not match. Compute it over the raw bytes, before any JSON parsing.</p>
+  <pre>import hmac, hashlib
+
+def valid(raw_body: bytes, header: str, secret: str) -> bool:
+    expected = "sha256=" + hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(header or "", expected)</pre>
+  <pre>// Node.js
+const crypto = require("crypto");
+function valid(rawBody, header, secret) {
+  const expected = "sha256=" + crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  return header && header.length === expected.length &&
+         crypto.timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+}</pre>
+
+  <h3>Acknowledging and retries</h3>
+  <ul>
+    <li>Reply with any <code>2xx</code> status to acknowledge.</li>
+    <li>Any other response is retried after 1 min, 5 min, 30 min, 2 h, 6 h, then daily.</li>
+    <li>Delivery is <b>at least once</b>: record each event <code>id</code> and ignore repeats.</li>
+    <li>Webhooks say <i>what changed</i>. When in doubt, read the current state from the API.</li>
+  </ul>
+  <div class="callout ok"><b>Tip</b> Acknowledge quickly and do the heavy work (database updates, push notifications) in a background job,
+    so slow processing does not trigger retries.</div>
+</section>
+
+<!-- ============================================================ 7 -->
+<section class="flow">
+  <h2>7. Good practice</h2>
+  <ul>
+    <li><b>Save the links</b> between <code>externalId</code> and <code>holderId</code>, and between each action and its
+      <code>Idempotency-Key</code> and <code>merchantOrderNo</code>.</li>
+    <li><b>Quote, then charge.</b> Call <code>GET /quote</code> before each issuance or deposit and charge your customer from that figure
+      plus your margin.</li>
+    <li><b>Hold, don't refund, on uncertainty.</b> Debit your customer first; refund only on a definitive refusal or a final
+      <code>FAILED</code>. Keep the money held while an operation is <code>PENDING</code> or <code>UNKNOWN</code>.</li>
+    <li><b>Retry with the same key.</b> Only ever retry with the same <code>Idempotency-Key</code>; a new key means a new action.</li>
+    <li><b>Don't rely on webhooks alone.</b> Run a job that polls <code>GET /operations/{reference}?refresh=true</code> for operations
+      still open after a few minutes, and <code>GET .../kyc?refresh=true</code> for customers waiting too long.</li>
+    <li><b>Watch the float.</b> Alert your finance team before the balance gets too low to issue cards.</li>
+    <li><b>Validate before submitting.</b> Check name length, date formats, address characters and file sizes in the app to avoid
+      <code>422</code>s and rejections.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ 8 -->
+<section class="flow">
+  <h2>8. Limits and what is not available</h2>
+  <table>
+    <thead><tr><th>Limit</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td>Requests</td><td>600 per minute</td></tr>
+      <tr><td>Opening load</td><td>USD 10 minimum</td></tr>
+      <tr><td>Deposit</td><td>USD 1 minimum</td></tr>
+      <tr><td>Per operation</td><td>USD {{MAX_USD}} maximum by default, or the limit agreed for your account</td></tr>
+      <tr><td>KYC uploads</td><td>JPG, PNG or PDF, 2 MB each</td></tr>
+    </tbody>
+  </table>
+  <h3>Not available in this version</h3>
+  <p>Plan your product around these current limitations:</p>
+  <ul>
+{{NOT_AVAILABLE}}
+  </ul>
+</section>
+
+<!-- ============================================================ A -->
+<section>
+  <h2>Appendix A: endpoint reference</h2>
+  <p>All paths are relative to <code>{{BASE_URL}}</code>. Every request needs <code>X-API-Key</code>. "Key" marks the requests that
+    require an <code>Idempotency-Key</code>.</p>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Purpose</th><th>Key</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET</code></td><td><code>/balance</code></td><td>Float balance (KES)</td><td></td></tr>
+      <tr><td><code>GET</code></td><td><code>/rates</code></td><td>Your rate and card fees</td><td></td></tr>
+      <tr><td><code>GET</code></td><td><code>/quote?kind=&amp;amount=&amp;cardTypeId=</code></td><td>Exact KES for an issuance or deposit</td><td></td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers</code></td><td>Create a customer</td><td></td></tr>
+      <tr><td><code>GET</code></td><td><code>/customers/{externalId}</code></td><td>Read a customer</td><td></td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers/{externalId}/kyc/documents</code></td><td>Upload a KYC document</td><td></td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers/{externalId}/kyc</code></td><td>Submit KYC</td><td>Key</td></tr>
+      <tr><td><code>GET</code></td><td><code>/customers/{externalId}/kyc?refresh=true</code></td><td>KYC status</td><td></td></tr>
+      <tr><td><code>PUT</code></td><td><code>/customers/{externalId}/kyc/{holderId}</code></td><td>Resubmit rejected KYC</td><td>Key</td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers/{externalId}/cards</code></td><td>Issue a card</td><td>Key</td></tr>
+      <tr><td><code>GET</code></td><td><code>/customers/{externalId}/cards</code></td><td>List cards</td><td></td></tr>
+      <tr><td><code>GET</code></td><td><code>/customers/{externalId}/cards/{cardNo}/balance</code></td><td>Card balance</td><td></td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers/{externalId}/cards/deposit</code></td><td>Deposit to a card</td><td>Key</td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers/{externalId}/cards/freeze</code></td><td>Freeze a card</td><td>Key</td></tr>
+      <tr><td><code>POST</code></td><td><code>/customers/{externalId}/cards/unfreeze</code></td><td>Unfreeze a card</td><td>Key</td></tr>
+{{DETAILS_APPENDIX}}
+      <tr><td><code>GET</code></td><td><code>/operations/{reference}?refresh=true</code></td><td>Outcome of an operation</td><td></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================ B -->
+<section>
+  <h2>Appendix B: go-live checklist</h2>
+  <table class="check">
+    <tbody>
+      <tr><td>&#9744;</td><td>API key and webhook secret stored server-side only</td></tr>
+      <tr><td>&#9744;</td><td>Base URL set to <code>{{BASE_URL}}</code></td></tr>
+      <tr><td>&#9744;</td><td><code>Idempotency-Key</code> generated per action, stored before sending, and reused on retries</td></tr>
+      <tr><td>&#9744;</td><td>Timeouts and <code>5xx</code> treated as "unknown": money held, never refunded until the outcome is final</td></tr>
+      <tr><td>&#9744;</td><td>Prices taken from <code>GET /quote</code> before each issuance and deposit</td></tr>
+      <tr><td>&#9744;</td><td>Webhook endpoint on HTTPS, verifying signatures over the raw body, URL given to Mamlaka</td></tr>
+      <tr><td>&#9744;</td><td>Webhook event ids recorded to ignore duplicates</td></tr>
+      <tr><td>&#9744;</td><td><code>externalId</code> to <code>holderId</code> mapping saved</td></tr>
+      <tr><td>&#9744;</td><td>Polling fallback for open operations and long-pending KYC</td></tr>
+      <tr><td>&#9744;</td><td>Float monitoring and low-balance alerts</td></tr>
+      <tr><td>&#9744;</td><td>In-app validation of KYC fields and file sizes</td></tr>
+{{DETAILS_CHECK}}
+    </tbody>
+  </table>
+{{CONTACT}}
+</section>
+
+</body>
+</html>

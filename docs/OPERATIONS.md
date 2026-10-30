@@ -58,6 +58,16 @@ Wasabi's own fees are always treated as **cost**; your margin is added on top, n
 
 Change `FX_KES_PER_USD` whenever your USDT price moves (then `docker compose up -d`). Resellers see their rate at `GET /api/v1/partner/rates` and the exact charge at `GET /api/v1/partner/quote`. Operations priced before margins were recorded do not appear in `earnings`.
 
+## Partner guide (PDF)
+
+One general guide, **MHS Virtual Cards - Partner Integration Guide**, for every partner. Rebuild it whenever the USDT rate, the standard margin or the API changes:
+
+```bash
+.venv/bin/python docs/partner-guide/build_guide.py --usdt 128.00
+```
+
+Use the **server's** `FX_KES_PER_USD` for `--usdt`. Prices are computed with the API's own pricing code at the standard partner margin (`PARTNER_MARGIN_PCT`); a partner on different terms reads its own rate from `GET /rates`. The PDF lands in `docs/partner-guide/out/MHS-Virtual-Cards-Partner-Guide.pdf` (not committed); edit `docs/partner-guide/guide.html` to change the content. `--no-card-details` leaves out the card number / CVV endpoint.
+
 ## Administering resellers
 
 All reseller administration is one script, run on the server from the project folder:

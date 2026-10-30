@@ -44,3 +44,6 @@ app/.venv/
 docker-compose.override.yml
 .env.*
 user-ui-application/
+
+# generated partner guide PDFs
+docs/partner-guide/out/
